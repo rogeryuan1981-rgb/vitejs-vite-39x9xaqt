@@ -38,7 +38,7 @@ export default function App() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [currentUploadingFile, setCurrentUploadingFile] = useState('');
 
-  // 初始化
+  // 初始化與讀取劇本
   useEffect(() => {
     const initApp = async () => {
       try {
@@ -66,8 +66,11 @@ export default function App() {
     } catch (e) { console.error(e); }
   };
 
+  // 劇本與分類連動
   useEffect(() => {
-    if (activeScenario) fetchDecksForScenario(activeScenario);
+    if (activeScenario) {
+      fetchDecksForScenario(activeScenario);
+    }
   }, [activeScenario]);
 
   const fetchDecksForScenario = async (scenarioName) => {
@@ -86,6 +89,7 @@ export default function App() {
     } catch (e) { console.error(e); }
   };
 
+  // 卡牌清單讀取
   useEffect(() => {
     if (activeScenario && activeDeckType) fetchFilteredCards();
   }, [activeScenario, activeDeckType]);
@@ -97,10 +101,12 @@ export default function App() {
       const snap = await getDocs(q);
       const items = [];
       snap.forEach(d => items.push(d.data()));
+      // 支援自然數字排序 (例如 01, 02...10)
       setCardList(items.sort((a, b) => a.id.localeCompare(b.id, undefined, {numeric: true, sensitivity: 'base'})));
     } finally { setIsSearching(false); }
   };
 
+  // BGM 控制
   const initBgm = () => {
     if (bgmRef.current) {
       bgmRef.current.stop();
@@ -124,6 +130,7 @@ export default function App() {
     initBgm();
   };
 
+  // 語音播放
   const playVoice = (url) => {
     if (!isUnlocked || !url) return;
     if (voiceRef.current) voiceRef.current.unload();
@@ -139,10 +146,11 @@ export default function App() {
     voiceRef.current.play();
   };
 
+  // 管理員上傳
   const handleFolderSelect = async (event) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
-    setUploadStatus('正在初始化');
+    setUploadStatus('正在解析儀式路徑...');
     let uploadedCount = 0;
     const audioFiles = Array.from(files).filter(f => f.type.startsWith('audio/'));
     const totalFiles = audioFiles.length;
@@ -150,8 +158,8 @@ export default function App() {
     for (let file of audioFiles) {
       const cardId = file.name.split('.')[0].toUpperCase();
       const pathParts = file.webkitRelativePath.split('/');
-      let scen = pathParts.length >= 3 ? pathParts[pathParts.length - 3] : "未分類劇本";
-      let deck = pathParts.length >= 2 ? pathParts[pathParts.length - 2] : "未分類牌組";
+      let scen = pathParts.length >= 3 ? pathParts[pathParts.length - 3] : "未命名劇本";
+      let deck = pathParts.length >= 2 ? pathParts[pathParts.length - 2] : "未分類檔案";
       setCurrentUploadingFile(cardId);
       setUploadStatus(`同步檔案中`);
       try {
@@ -173,17 +181,18 @@ export default function App() {
   };
 
   return (
-    <div className="w-screen h-screen flex flex-col overflow-hidden bg-[#0d0d0d] text-[#d4c5a9] font-serif selection:bg-[#ffb74d] selection:text-black">
-      {/* 噪點遮罩質感 */}
-      <div className="fixed inset-0 pointer-events-none opacity-[0.03] z-[9999] bg-[url('https://www.transparenttextures.com/patterns/stardust.png')]"></div>
+    <div className="w-screen h-screen flex flex-col overflow-hidden bg-[#0a0a0a] text-[#c9b99a] font-serif selection:bg-[#ffb74d] selection:text-black">
+      {/* 噪點與暗角質感 */}
+      <div className="fixed inset-0 pointer-events-none opacity-[0.04] z-[9999] bg-[url('https://www.transparenttextures.com/patterns/micro-carbon.png')]"></div>
+      <div className="fixed inset-0 pointer-events-none z-[9998] shadow-[inset_0_0_200px_rgba(0,0,0,0.9)]"></div>
 
       {!isUnlocked && (
         <div className="fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center p-6 text-center">
-          <div className="relative p-20 border border-[#2a2a2a] bg-[#050505]">
-            <div className="absolute inset-0 border border-[#ffb74d] opacity-20 scale-[1.02]"></div>
-            <h1 className="text-5xl font-black text-[#ffb74d] mb-12 tracking-[1em] drop-shadow-[0_0_15px_rgba(255,183,77,0.5)]">禁忌檔案庫</h1>
-            <button onClick={startRitual} className="relative px-16 py-6 border-2 border-[#ffb74d] text-[#ffb74d] text-xl font-bold hover:bg-[#ffb74d] hover:text-black transition-all duration-700 tracking-[0.5em] overflow-hidden group">
-              <span className="relative z-10">啟動檢索終端</span>
+          <div className="relative p-20 border border-[#222] bg-[#050505] shadow-[0_0_100px_rgba(0,0,0,0.8)]">
+            <div className="absolute inset-0 border border-[#ffb74d] opacity-10 animate-pulse"></div>
+            <h1 className="text-6xl font-black text-[#ffb74d] mb-12 tracking-[1.2em] drop-shadow-[0_0_20px_rgba(255,183,77,0.4)]">禁忌檔案庫</h1>
+            <button onClick={startRitual} className="relative px-20 py-8 border-2 border-[#ffb74d] text-[#ffb74d] text-2xl font-bold hover:bg-[#ffb74d] hover:text-black transition-all duration-700 tracking-[0.8em] overflow-hidden group">
+              <span className="relative z-10 uppercase">Initiate</span>
               <div className="absolute inset-0 bg-[#ffb74d] translate-y-full group-hover:translate-y-0 transition-transform duration-500"></div>
             </button>
           </div>
@@ -191,58 +200,57 @@ export default function App() {
       )}
 
       {/* Header */}
-      <header className="flex justify-between items-center px-8 py-5 border-b border-[#2a2a2a] bg-[#0a0a0a] shadow-2xl z-20">
-        <div className="flex items-center gap-4">
-          <div className="w-10 h-10 border border-[#ffb74d] flex items-center justify-center text-xs rotate-45 text-[#ffb74d]">👁️</div>
-          <div className="text-2xl font-bold text-[#ffb74d] cursor-pointer tracking-widest hover:brightness-125 transition-all" onClick={() => {
+      <header className="flex justify-between items-center px-10 py-6 border-b border-[#1a1a1a] bg-[#050505] z-20 shadow-2xl">
+        <div className="flex items-center gap-6">
+          <div className="w-12 h-12 border border-[#ffb74d]/40 flex items-center justify-center text-lg rotate-45 text-[#ffb74d] shadow-[0_0_15px_rgba(255,183,77,0.2)]">👁️</div>
+          <div className="text-3xl font-bold text-[#ffb74d] cursor-pointer tracking-widest hover:brightness-125 transition-all drop-shadow-md" onClick={() => {
             const p = prompt("請輸入密語："); if (p === '0943') setIsAdmin(!isAdmin);
-          }}>禁忌檔案庫 {isAdmin && <span className="text-[10px] ml-2 text-red-500 animate-pulse">[管理模式]</span>}</div>
+          }}>禁忌檔案庫 {isAdmin && <span className="text-xs ml-3 text-red-500 animate-pulse uppercase tracking-normal">Admin_Active</span>}</div>
         </div>
         
-        <div className="flex items-center space-x-6">
-          <div className="flex items-center gap-3 px-4 py-2 border border-[#2a2a2a] bg-black text-[11px]">
-            <span className="opacity-40 text-[#ffb74d] uppercase tracking-tighter">BGM 頻道</span>
-            <select className="bg-transparent outline-none text-[#ffb74d] font-bold" value={activeBgm.id} onChange={(e) => setActiveBgm(bgmOptions.find(b => b.id === e.target.value))}>
-              {bgmOptions.map(b => <option key={b.id} value={b.id} className="bg-[#1a1a1a]">{b.name}</option>)}
+        <div className="flex items-center space-x-8">
+          <div className="flex items-center gap-4 px-6 py-3 border border-[#1a1a1a] bg-black/50 backdrop-blur-sm text-[11px] rounded-sm">
+            <span className="opacity-30 text-[#ffb74d] uppercase tracking-widest font-black">BGM System</span>
+            <select className="bg-transparent outline-none text-[#ffb74d] font-bold cursor-pointer" value={activeBgm.id} onChange={(e) => setActiveBgm(bgmOptions.find(b => b.id === e.target.value))}>
+              {bgmOptions.map(b => <option key={b.id} value={b.id} className="bg-[#050505]">{b.name}</option>)}
             </select>
-            <div className="w-[1px] h-4 bg-[#2a2a2a] mx-2"></div>
-            <input type="range" min="0" max="1" step="0.01" value={bgmVolume} onChange={(e) => setBgmVolume(parseFloat(e.target.value))} className="w-24 h-1 accent-[#ffb74d] hover:scale-x-105 transition-transform" />
+            <div className="w-[1px] h-4 bg-[#1a1a1a] mx-2"></div>
+            <input type="range" min="0" max="1" step="0.01" value={bgmVolume} onChange={(e) => setBgmVolume(parseFloat(e.target.value))} className="w-32 h-1 accent-[#ffb74d] cursor-pointer hover:scale-x-105 transition-all" />
           </div>
         </div>
       </header>
 
-      <main className="flex-1 flex p-8 gap-8 overflow-hidden relative">
-        {/* 左側選單：分類連動 */}
-        <div className="w-64 flex flex-col gap-8 overflow-y-auto pr-2 custom-scrollbar">
+      <main className="flex-1 flex p-10 gap-10 overflow-hidden relative">
+        {/* 左側選單 */}
+        <div className="w-72 flex flex-col gap-10 overflow-y-auto pr-4 custom-scrollbar">
           <section>
-            <p className="text-[#ffb74d] text-xs mb-4 opacity-40 uppercase tracking-[0.3em] font-black border-l-2 border-[#ffb74d] pl-3">劇本清單</p>
+            <p className="text-[#ffb74d] text-[10px] mb-6 opacity-40 uppercase tracking-[0.4em] font-black border-l-4 border-[#ffb74d] pl-4">劇本清單</p>
             <div className="flex flex-col gap-3">
               {scenarios.map(s => (
-                <button key={s} onClick={() => {setActiveScenario(s); setIsAdmin(false);}} className={`group relative p-4 text-sm text-left border transition-all duration-300 ${activeScenario === s ? 'bg-[#ffb74d] text-black border-[#ffb74d] font-bold translate-x-2' : 'border-[#2a2a2a] bg-[#111] hover:border-[#ffb74d]/50 hover:translate-x-1'}`}>
+                <button key={s} onClick={() => {setActiveScenario(s); setIsAdmin(false);}} className={`group relative p-5 text-sm text-left border transition-all duration-500 ${activeScenario === s ? 'bg-[#ffb74d] text-black border-[#ffb74d] font-bold shadow-[0_5px_20px_rgba(255,183,77,0.3)]' : 'border-[#1a1a1a] bg-[#0a0a0a] hover:border-[#ffb74d]/60'}`}>
                   {s}
-                  {activeScenario === s && <div className="absolute right-4 top-1/2 -translate-y-1/2 text-black/30 text-xs">◆</div>}
+                  {activeScenario === s && <div className="absolute right-5 top-1/2 -translate-y-1/2 text-black/40">◆</div>}
                 </button>
               ))}
             </div>
           </section>
           
           <section>
-            <p className="text-[#ffb74d] text-xs mb-4 opacity-40 uppercase tracking-[0.3em] font-black border-l-2 border-[#ffb74d] pl-3">檔案分類</p>
+            <p className="text-[#ffb74d] text-[10px] mb-6 opacity-40 uppercase tracking-[0.4em] font-black border-l-4 border-[#ffb74d] pl-4">檔案分類</p>
             <div className="flex flex-col gap-3">
               {availableDecks.map(d => (
-                <button key={d} onClick={() => {setActiveDeckType(d); setIsAdmin(false);}} className={`p-4 text-xs text-left border transition-all duration-300 ${activeDeckType === d ? 'border-[#ffb74d] text-[#ffb74d] bg-[#ffb74d]/5 font-bold shadow-[inset_0_0_10px_rgba(255,183,77,0.1)]' : 'border-[#2a2a2a] bg-[#111] opacity-60 hover:opacity-100 hover:border-[#ffb74d]/30'}`}>{d}</button>
+                <button key={d} onClick={() => {setActiveDeckType(d); setIsAdmin(false);}} className={`p-5 text-xs text-left border transition-all duration-500 ${activeDeckType === d ? 'border-[#ffb74d] text-[#ffb74d] bg-[#ffb74d]/5 font-bold shadow-[inset_0_0_20px_rgba(255,183,77,0.1)]' : 'border-[#1a1a1a] bg-[#0a0a0a] opacity-50 hover:opacity-100 hover:border-[#ffb74d]/40'}`}>{d}</button>
               ))}
-              {availableDecks.length === 0 && <p className="text-[10px] text-center opacity-20 italic p-4 border border-dashed border-[#2a2a2a]">無分類資料</p>}
             </div>
           </section>
         </div>
 
         {/* 右側內容區塊 */}
-        <div className="flex-1 flex flex-col gap-6 overflow-hidden">
-          <div className="flex gap-4 group">
+        <div className="flex-1 flex flex-col gap-8 overflow-hidden">
+          <div className="flex gap-5 group">
             <div className="relative flex-1">
-              <input type="text" placeholder="輸入編號進行深度檢索..." className="w-full p-5 bg-[#0a0a0a] border border-[#2a2a2a] text-xl outline-none focus:border-[#ffb74d] focus:bg-black transition-all duration-500 placeholder:opacity-20 placeholder:italic" value={searchId} onChange={(e) => setSearchId(e.target.value)} />
-              <div className="absolute right-5 top-1/2 -translate-y-1/2 text-[10px] opacity-20 font-mono tracking-tighter">SEARCH_MODE_ACTIVE</div>
+              <input type="text" placeholder="輸入編號進行深度檢索..." className="w-full p-6 bg-[#050505] border border-[#1a1a1a] text-2xl outline-none focus:border-[#ffb74d] focus:bg-[#080808] transition-all duration-700 placeholder:opacity-10 placeholder:italic" value={searchId} onChange={(e) => setSearchId(e.target.value)} />
+              <div className="absolute right-6 top-1/2 -translate-y-1/2 text-[9px] opacity-10 font-mono uppercase tracking-[0.2em] pointer-events-none">Scanner_Ready</div>
             </div>
             <button onClick={() => {
               const id = searchId.trim().toUpperCase();
@@ -252,62 +260,64 @@ export default function App() {
                   else alert("此紀錄未被編錄。");
                 });
               }
-            }} className="px-12 bg-[#ffb74d] text-black font-black uppercase hover:brightness-110 active:scale-95 transition-all shadow-[0_0_20px_rgba(255,183,77,0.2)]">檢索</button>
+            }} className="px-16 bg-[#ffb74d] text-black font-black uppercase hover:brightness-110 active:scale-95 transition-all shadow-[0_0_30px_rgba(255,183,77,0.2)]">檢索</button>
           </div>
 
-          <div className="flex-1 border border-[#2a2a2a] p-10 flex flex-col items-center justify-center relative bg-[#0a0a0a] bg-[radial-gradient(circle_at_center,_rgba(255,183,77,0.03)_0%,_transparent_70%)] overflow-hidden shadow-[inset_0_0_50px_rgba(0,0,0,0.5)]">
+          <div className="flex-1 border border-[#1a1a1a] p-12 flex flex-col items-center justify-center relative bg-[#050505] overflow-hidden rounded-sm shadow-[inset_0_0_100px_rgba(0,0,0,0.8)]">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_rgba(255,183,77,0.02)_0%,_transparent_70%)] pointer-events-none"></div>
             
             {isAdmin ? (
               <div className="w-full max-w-2xl text-center animate-fadeIn">
-                <div className="relative border-2 border-dashed border-[#ffb74d]/30 p-20 bg-[#050505] group hover:border-[#ffb74d] hover:bg-[#080808] transition-all duration-1000 cursor-pointer">
+                <div className="relative border-2 border-dashed border-[#ffb74d]/20 p-24 bg-[#080808] group hover:border-[#ffb74d] transition-all duration-1000 cursor-pointer shadow-inner">
                   <input type="file" webkitdirectory="true" directory="true" multiple onChange={handleFolderSelect} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
-                  <div className="flex flex-col items-center gap-6">
-                    <div className="text-7xl group-hover:scale-110 group-hover:rotate-12 transition-all duration-700 opacity-60">📜</div>
-                    <p className="text-2xl font-bold tracking-[0.2em] text-[#ffb74d]">{uploadStatus || "上傳古神資料夾"}</p>
-                    {currentUploadingFile && <p className="text-xs font-mono text-[#ffb74d] animate-pulse">解析中: {currentUploadingFile}</p>}
+                  <div className="flex flex-col items-center gap-8">
+                    <div className="text-8xl opacity-40 group-hover:scale-110 group-hover:rotate-6 transition-all duration-1000">📂</div>
+                    <p className="text-3xl font-bold tracking-[0.3em] text-[#ffb74d] drop-shadow-lg">{uploadStatus || "上傳古神資料夾"}</p>
+                    {currentUploadingFile && <p className="text-[10px] font-mono text-[#ffb74d] animate-pulse uppercase tracking-widest">Processing: {currentUploadingFile}</p>}
                   </div>
                   {uploadProgress > 0 && (
-                    <div className="absolute bottom-0 left-0 w-full h-1 bg-[#1a1a1a]">
-                      <div className="h-full bg-[#ffb74d] shadow-[0_0_20px_#ffb74d] transition-all duration-300" style={{ width: `${uploadProgress}%` }}></div>
+                    <div className="absolute bottom-0 left-0 w-full h-1 bg-black/50">
+                      <div className="h-full bg-[#ffb74d] shadow-[0_0_20px_#ffb74d] transition-all duration-500" style={{ width: `${uploadProgress}%` }}></div>
                     </div>
                   )}
                 </div>
-                <button onClick={() => setIsAdmin(false)} className="mt-12 text-[10px] opacity-20 hover:opacity-100 hover:text-[#ffb74d] transition-all tracking-[0.5em] border-b border-transparent hover:border-[#ffb74d]">關閉管理控制終端</button>
+                <button onClick={() => setIsAdmin(false)} className="mt-16 text-[9px] opacity-20 hover:opacity-100 hover:text-[#ffb74d] transition-all tracking-[0.6em] uppercase border-b border-transparent hover:border-[#ffb74d] pb-1">關閉管理模式</button>
               </div>
             ) : currentCard ? (
               <div className="text-center w-full animate-fadeIn flex flex-col items-center">
-                <div className="mb-4 flex items-center gap-6 opacity-40">
-                  <div className="h-[1px] w-20 bg-[#ffb74d]"></div>
-                  <span className="text-xs tracking-[0.8em] font-black">{currentCard.scenario} / {currentCard.deckType}</span>
-                  <div className="h-[1px] w-20 bg-[#ffb74d]"></div>
+                <div className="mb-6 flex items-center gap-8 opacity-30">
+                  <div className="h-[1px] w-24 bg-[#ffb74d]"></div>
+                  <span className="text-xs tracking-[1em] font-black uppercase">{currentCard.scenario} / {currentCard.deckType}</span>
+                  <div className="h-[1px] w-24 bg-[#ffb74d]"></div>
                 </div>
-                <h2 className="text-[12rem] font-black leading-none my-12 tracking-tighter text-[#ffb74d] drop-shadow-[0_0_30px_rgba(255,183,77,0.3)] select-none">{currentCard.id}</h2>
+                <h2 className="text-[14rem] font-black leading-none my-14 tracking-tighter text-[#ffb74d] drop-shadow-[0_10px_40px_rgba(255,183,77,0.4)] select-none">{currentCard.id}</h2>
                 
-                <button onClick={() => playVoice(currentCard.audioUrl)} className={`group relative w-40 h-40 rounded-full border-4 flex items-center justify-center transition-all duration-1000 ${isVoicePlaying ? 'border-[#ffb74d] bg-[#ffb74d]/10' : 'border-[#d4c5a9]/20 hover:border-[#ffb74d] hover:scale-110'}`}>
-                  <div className={`text-6xl transition-all duration-500 ${isVoicePlaying ? 'scale-125 text-[#ffb74d]' : 'group-hover:text-[#ffb74d]'}`}>
+                <button onClick={() => playVoice(currentCard.audioUrl)} className={`group relative w-48 h-48 rounded-full border-4 flex items-center justify-center transition-all duration-1000 shadow-2xl ${isVoicePlaying ? 'border-[#ffb74d] bg-[#ffb74d]/5' : 'border-[#c9b99a]/10 hover:border-[#ffb74d]'}`}>
+                  <div className={`text-7xl transition-all duration-700 ${isVoicePlaying ? 'scale-125 text-[#ffb74d] drop-shadow-[0_0_20px_rgba(255,183,77,0.8)]' : 'group-hover:text-[#ffb74d]'}`}>
                     {isVoicePlaying ? '⚡' : '▶'}
                   </div>
                   {isVoicePlaying && (
-                    <div className="absolute inset-0 rounded-full border-2 border-[#ffb74d] animate-ping opacity-20"></div>
+                    <div className="absolute inset-0 rounded-full border border-[#ffb74d] animate-ping opacity-10"></div>
                   )}
                 </button>
 
-                <button onClick={() => { if(voiceRef.current) voiceRef.current.unload(); setCurrentCard(null); }} className="mt-16 px-10 py-3 border border-[#2a2a2a] text-[10px] opacity-30 hover:opacity-100 hover:bg-[#ffb74d] hover:text-black hover:border-[#ffb74d] transition-all tracking-[0.4em] uppercase">Dismiss</button>
+                <button onClick={() => { if(voiceRef.current) voiceRef.current.unload(); setCurrentCard(null); }} className="mt-20 px-14 py-4 border border-[#1a1a1a] text-[10px] opacity-20 hover:opacity-100 hover:bg-[#ffb74d] hover:text-black hover:border-[#ffb74d] transition-all tracking-[0.5em] uppercase font-black">Dismiss Archive</button>
               </div>
             ) : (
-              <div className="w-full h-full overflow-y-auto custom-scrollbar pr-4">
-                <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
+              <div className="w-full h-full overflow-y-auto custom-scrollbar pr-4 pt-2">
+                <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-8">
                   {cardList.map(card => (
-                    <button key={card.id} onClick={() => { setCurrentCard(card); playVoice(card.audioUrl); }} className="aspect-[4/5] border border-[#2a2a2a] bg-[#111] flex flex-col items-center justify-center gap-4 group hover:border-[#ffb74d] hover:-translate-y-2 hover:shadow-[0_10px_30px_rgba(0,0,0,0.5)] transition-all duration-500 relative overflow-hidden">
-                      <div className="absolute top-0 left-0 w-full h-[2px] bg-[#ffb74d] -translate-x-full group-hover:translate-x-0 transition-transform duration-700"></div>
-                      <span className="text-3xl font-black group-hover:scale-110 group-hover:text-[#ffb74d] transition-all duration-500 select-none">{card.id}</span>
-                      <div className="text-[9px] opacity-20 group-hover:opacity-100 transition-opacity tracking-widest uppercase">Inspect</div>
+                    <button key={card.id} onClick={() => { setCurrentCard(card); playVoice(card.audioUrl); }} className="aspect-[4/5] border border-[#1a1a1a] bg-[#080808] flex flex-col items-center justify-center p-6 group hover:border-[#ffb74d] hover:-translate-y-3 hover:shadow-[0_20px_50px_rgba(0,0,0,0.8)] transition-all duration-700 relative overflow-hidden">
+                      <div className="absolute inset-0 bg-gradient-to-br from-[#ffb74d]/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
+                      <div className="absolute top-0 left-0 w-full h-[2px] bg-[#ffb74d] -translate-x-full group-hover:translate-x-0 transition-transform duration-1000"></div>
+                      <span className="text-4xl font-black group-hover:scale-110 group-hover:text-[#ffb74d] transition-all duration-700 select-none drop-shadow-lg">{card.id}</span>
+                      <div className="mt-6 text-[8px] opacity-10 group-hover:opacity-100 group-hover:text-[#ffb74d]/50 transition-all tracking-[0.4em] uppercase font-black">Inspect</div>
                     </button>
                   ))}
                   {cardList.length === 0 && (
-                    <div className="col-span-full h-full flex flex-col items-center justify-center opacity-10">
-                      <div className="text-9xl mb-8">🌑</div>
-                      <p className="text-2xl tracking-[1em]">此處空無一物</p>
+                    <div className="col-span-full h-full flex flex-col items-center justify-center opacity-5">
+                      <div className="text-[15rem] mb-12">🕳️</div>
+                      <p className="text-3xl tracking-[1.5em] font-black uppercase">V O I D</p>
                     </div>
                   )}
                 </div>
@@ -318,15 +328,15 @@ export default function App() {
       </main>
 
       <style jsx>{`
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar { width: 3px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #2a2a2a; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #1a1a1a; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #ffb74d; }
         @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(10px); }
+          from { opacity: 0; transform: translateY(20px); }
           to { opacity: 1; transform: translateY(0); }
         }
-        .animate-fadeIn { animation: fadeIn 0.8s ease-out forwards; }
+        .animate-fadeIn { animation: fadeIn 1s cubic-bezier(0.23, 1, 0.32, 1) forwards; }
       `}</style>
     </div>
   );
