@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Howl } from 'howler';
 import { db, storage } from './firebaseConfig'; 
-import { collection, getDocs, doc, getDoc } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc, query, where } from "firebase/firestore";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 
 const bgmOptions = [
@@ -18,35 +18,85 @@ export default function App() {
   const [bgmVolume, setBgmVolume] = useState(0.2);
   const [bgmSound, setBgmSound] = useState(null);
   
-  // 管理員權限與資料庫狀態
+  // 管理員與連線狀態
   const [isAdmin, setIsAdmin] = useState(false);
-  const [dbStatus, setDbStatus] = useState('連線測試中...');
+  const [dbStatus, setDbStatus] = useState('連線中...');
   
-  // 上傳與檢索狀態
-  const [uploadStatus, setUploadStatus] = useState('');
-  const [uploadProgress, setUploadProgress] = useState(0);
+  // 資料狀態
   const [searchId, setSearchId] = useState('');
   const [currentCard, setCurrentCard] = useState(null);
+  const [cardList, setCardList] = useState([]); // 當前分類的卡牌清單
+  const [activeCategory, setActiveCategory] = useState('調查牌組'); // 預設分類
   const [isSearching, setIsSearching] = useState(false);
+
+  // 上傳狀態
+  const [uploadStatus, setUploadStatus] = useState('');
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   // 播放器狀態
   const [voiceSound, setVoiceSound] = useState(null);
   const [isVoicePlaying, setIsVoicePlaying] = useState(false);
 
-  // 測試 Firebase 連線
+  // 1. 初始化連線與讀取預設分類
   useEffect(() => {
-    const testConnection = async () => {
+    const initApp = async () => {
       try {
         await getDocs(collection(db, "system_check"));
         setDbStatus('連線成功 (終端已連線)');
+        fetchCategoryData('調查牌組'); // 初始載入
       } catch (error) {
         setDbStatus('連線失敗 (迷失於虛空)');
       }
     };
-    testConnection();
+    initApp();
   }, []);
 
-  // 背景音樂控制
+  // 2. 根據分類抓取資料
+  const fetchCategoryData = async (category) => {
+    setIsSearching(true);
+    setActiveCategory(category);
+    setCurrentCard(null);
+    try {
+      const q = query(collection(db, "cards"), where("deckType", "==", category));
+      const querySnapshot = await getDocs(q);
+      const items = [];
+      querySnapshot.forEach((doc) => {
+        items.push(doc.data());
+      });
+      setCardList(items);
+    } catch (error) {
+      console.error("讀取分類失敗:", error);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // 3. 檢索功能 (精確匹配)
+  const handleSearch = async (e) => {
+    if (e) e.preventDefault();
+    const id = searchId.trim().toUpperCase();
+    if (!id) return;
+
+    setIsSearching(true);
+    if (voiceSound) voiceSound.stop();
+
+    try {
+      const docRef = doc(db, "cards", id);
+      const docSnap = await getDoc(docRef);
+
+      if (docSnap.exists()) {
+        setCurrentCard(docSnap.data());
+      } else {
+        alert(`編號 ${id} 不存在於禁忌檔案中。`);
+      }
+    } catch (error) {
+      console.error("檢索錯誤:", error);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // 背景音樂與語音邏輯 (保持原有邏輯)
   useEffect(() => {
     if (bgmSound) bgmSound.stop();
     if (activeBgm.src) {
@@ -57,71 +107,33 @@ export default function App() {
     return () => { if (bgmSound) bgmSound.unload(); };
   }, [activeBgm]);
 
-  useEffect(() => {
-    if (bgmSound) bgmSound.volume(bgmVolume);
-  }, [bgmVolume]);
+  useEffect(() => { if (bgmSound) bgmSound.volume(bgmVolume); }, [bgmVolume]);
 
-  // 隱藏入口
-  const handleSecretClick = () => {
-    const password = prompt("請輸入古老密語以開啟深淵：");
-    if (password === 'phnglui') {
-      setIsAdmin(true);
-      alert("權限已確認，理智值鎖定。");
-    }
-  };
-
-  // 核心功能：檢索卡牌
-  const handleSearch = async (e) => {
-    e.preventDefault();
-    const id = searchId.trim().toUpperCase();
-    if (!id) return;
-
-    setIsSearching(true);
-    setCurrentCard(null);
-    if (voiceSound) voiceSound.stop();
-
-    try {
-      const docRef = doc(db, "cards", id);
-      const docSnap = await getDoc(docRef);
-
-      if (docSnap.exists()) {
-        setCurrentCard(docSnap.data());
-      } else {
-        alert("查無此編號，檔案可能已被抹除。");
-      }
-    } catch (error) {
-      console.error("檢索失敗:", error);
-    } finally {
-      setIsSearching(false);
-    }
-  };
-
-  // 播放語音導覽
   const playVoice = (url) => {
     if (voiceSound) voiceSound.stop();
-    
     const sound = new Howl({
-      src: [url],
-      html5: true,
+      src: [url], html5: true,
       onplay: () => setIsVoicePlaying(true),
       onend: () => setIsVoicePlaying(false),
       onstop: () => setIsVoicePlaying(false)
     });
-    
     sound.play();
     setVoiceSound(sound);
   };
 
-  // 處理資料夾批次上傳 (同前次邏輯)
+  const handleSecretClick = () => {
+    const password = prompt("請輸入古老密語：");
+    if (password === 'phnglui') { setIsAdmin(true); alert("管理權限已開啟。"); }
+  };
+
+  // 上傳功能 (保持原有路徑拆解邏輯)
   const handleFolderSelect = async (event) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
     let validFilesCount = 0;
-    let uploadedCount = 0;
     for (let i = 0; i < files.length; i++) if (files[i].type.startsWith('audio/')) validFilesCount++;
-    if (validFilesCount === 0) return;
-
     setUploadStatus(`準備奉獻 ${validFilesCount} 份檔案...`);
+    let uploadedCount = 0;
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       if (!file.type.startsWith('audio/')) continue;
@@ -142,7 +154,8 @@ export default function App() {
         setUploadProgress(Math.round((uploadedCount / validFilesCount) * 100));
       } catch (e) { console.error(e); }
     }
-    setUploadStatus(`儀式完成！已編錄 ${uploadedCount} 份檔案。`);
+    setUploadStatus(`完成！已上傳 ${uploadedCount} 個檔案。`);
+    fetchCategoryData(activeCategory); // 刷新當前列表
     setTimeout(() => { setUploadStatus(''); setUploadProgress(0); }, 3000);
   };
 
@@ -164,63 +177,72 @@ export default function App() {
         </div>
       </header>
 
-      <main className="flex-1 flex p-6 gap-6">
+      <main className="flex-1 flex p-6 gap-6 overflow-hidden">
+        {/* 左側分類 */}
         <div className="w-48 flex flex-col gap-4 border-r border-[var(--border-color)] pr-4">
-          <button className="p-3 text-left border border-[var(--border-color)] bg-[var(--bg-panel)] hover:border-[var(--text-highlight)] transition">📁 核心卡牌</button>
-          <button className="p-3 text-left border border-[var(--border-color)] bg-[var(--bg-panel)] hover:border-[var(--text-highlight)] transition">📁 討論牌組</button>
-          <button className="p-3 text-left border border-[var(--border-color)] bg-[var(--bg-panel)] hover:border-[var(--text-highlight)] transition text-[var(--text-highlight)]">📁 調查牌組</button>
+          {['核心卡牌', '討論牌組', '調查牌組'].map(cat => (
+            <button 
+              key={cat}
+              onClick={() => fetchCategoryData(cat)}
+              className={`p-3 text-left border border-[var(--border-color)] transition ${activeCategory === cat ? 'bg-[var(--text-highlight)] text-black font-bold' : 'bg-[var(--bg-panel)] hover:border-[var(--text-highlight)]'}`}
+            >
+              📁 {cat}
+            </button>
+          ))}
         </div>
 
-        <div className="flex-1 flex flex-col gap-4">
+        {/* 右側內容 */}
+        <div className="flex-1 flex flex-col gap-4 overflow-hidden">
           <form onSubmit={handleSearch} className="flex gap-2">
             <input 
-              type="text" placeholder="輸入檢索編號 (例如: 72B)..." 
+              type="text" placeholder="輸入編號檢索，或從下方清單選取..." 
               className="flex-1 p-3 bg-[var(--bg-panel)] border border-[var(--border-color)] text-[var(--text-primary)] focus:border-[var(--text-highlight)] text-lg outline-none"
               value={searchId} onChange={(e) => setSearchId(e.target.value)}
             />
-            <button type="submit" className="px-6 bg-[var(--text-highlight)] text-black font-bold hover:opacity-80 transition">檢索</button>
+            <button type="submit" className="px-6 bg-[var(--text-highlight)] text-black font-bold hover:opacity-80">檢索</button>
           </form>
           
-          <div className="flex-1 border border-[var(--border-color)] p-6 flex flex-col items-center justify-center relative bg-[var(--bg-panel)] bg-opacity-30">
+          <div className="flex-1 border border-[var(--border-color)] p-6 flex flex-col items-center justify-center relative bg-[var(--bg-panel)] bg-opacity-30 overflow-y-auto">
+            
             {isSearching ? (
-              <p className="animate-pulse text-[var(--text-highlight)]">正在從深淵讀取資料...</p>
+              <p className="animate-pulse text-[var(--text-highlight)]">正在檢索深淵檔案...</p>
             ) : currentCard ? (
-              <div className="text-center animate-fadeIn w-full max-w-md">
-                <div className="mb-2 text-[var(--text-highlight)] text-sm uppercase tracking-widest">{currentCard.scenario} / {currentCard.deckType}</div>
-                <h2 className="text-6xl font-bold mb-8 tracking-tighter">{currentCard.id}</h2>
+              <div className="text-center animate-fadeIn">
+                <div className="mb-2 text-[var(--text-highlight)] text-sm">{currentCard.scenario} / {currentCard.deckType}</div>
+                <h2 className="text-7xl font-bold mb-8">{currentCard.id}</h2>
                 <button 
                   onClick={() => playVoice(currentCard.audioUrl)}
-                  className={`w-24 h-24 rounded-full border-4 flex items-center justify-center text-3xl transition-all ${isVoicePlaying ? 'border-[var(--text-highlight)] animate-ping' : 'border-[var(--text-primary)] hover:scale-110'}`}
+                  className={`w-24 h-24 rounded-full border-4 flex items-center justify-center text-3xl ${isVoicePlaying ? 'border-[var(--text-highlight)] animate-ping' : 'border-[var(--text-primary)]'}`}
                 >
                   {isVoicePlaying ? '🔊' : '▶️'}
                 </button>
-                <p className="mt-6 opacity-60 text-sm">點擊按鈕啟動語音轉譯</p>
+                <button onClick={() => setCurrentCard(null)} className="block mt-8 text-sm opacity-50 hover:underline mx-auto">返回清單</button>
               </div>
             ) : isAdmin ? (
               <div className="text-center w-full max-w-lg">
                 <h2 className="text-2xl text-[var(--text-highlight)] mb-6 font-bold">管理員控制台</h2>
-                <div className="relative p-10 border-2 border-dashed border-[var(--border-color)] hover:border-[var(--text-highlight)] bg-[var(--bg-panel)] transition-all flex flex-col items-center justify-center min-h-[200px]">
+                <div className="relative p-10 border-2 border-dashed border-[var(--border-color)] hover:border-[var(--text-highlight)] bg-[var(--bg-panel)] min-h-[200px] flex items-center justify-center">
                   <input type="file" webkitdirectory="true" directory="true" multiple onChange={handleFolderSelect} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
-                  {uploadStatus ? (
-                    <div className="w-full text-center">
-                      <p className="mb-4 text-[var(--text-highlight)] font-bold">{uploadStatus}</p>
-                      <div className="w-full bg-[var(--bg-primary)] h-2 rounded-full overflow-hidden">
-                        <div className="bg-[var(--text-highlight)] h-full transition-all" style={{ width: `${uploadProgress}%` }}></div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-center">
-                      <span className="text-5xl mb-4 block">📁</span>
-                      <p className="text-xl font-bold">批次上傳資料夾</p>
-                      <p className="text-sm opacity-60 mt-2">劇本 / 牌組 / 音檔</p>
-                    </div>
-                  )}
+                  <div className="text-center">
+                    {uploadStatus ? <p className="font-bold text-[var(--text-highlight)]">{uploadStatus}</p> : <p>📁 點擊此處奉獻整包資料夾</p>}
+                  </div>
                 </div>
               </div>
             ) : (
-              <div className="text-center opacity-40">
-                <div className="text-4xl mb-4">🔦</div>
-                <p>請輸入卡牌編號以進行聲頻分析</p>
+              <div className="w-full h-full">
+                <p className="text-sm text-[var(--text-highlight)] mb-4">現有檔案清單 ({activeCategory})：</p>
+                <div className="grid grid-cols-4 gap-4">
+                  {cardList.length > 0 ? cardList.map(card => (
+                    <div 
+                      key={card.id}
+                      onClick={() => setCurrentCard(card)}
+                      className="p-4 border border-[var(--border-color)] bg-[var(--bg-panel)] cursor-pointer hover:border-[var(--text-highlight)] text-center transition"
+                    >
+                      <div className="text-xl font-bold">{card.id}</div>
+                      <div className="text-[10px] opacity-40 truncate">{card.scenario}</div>
+                    </div>
+                  )) : <p className="col-span-4 opacity-30 text-center py-10">此分類目前無編錄檔案</p>}
+                </div>
               </div>
             )}
           </div>
