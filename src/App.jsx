@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { db } from './firebaseConfig'; 
+import { Howl, Howler } from 'howler';
+import { db, storage } from './firebaseConfig'; 
 import { collection, getDocs, doc, getDoc, query, where, setDoc } from "firebase/firestore";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
-import { storage } from './firebaseConfig';
 
 const bgmOptions = [
   { id: 'bgm1', name: '音軌 I：無名之霧', src: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' },
@@ -16,30 +16,33 @@ export default function App() {
   const [bgmVolume, setBgmVolume] = useState(0.2);
   const [isUnlocked, setIsUnlocked] = useState(false);
   
-  const bgmAudio = useRef(new Audio());
-  const voiceAudio = useRef(new Audio());
+  const bgmRef = useRef(null);
+  const voiceRef = useRef(null);
 
   const [isAdmin, setIsAdmin] = useState(false);
   const [dbStatus, setDbStatus] = useState('連線中...');
-  const [scenarios, setScenarios] = useState([]);
+  
+  const [scenarios, setScenarios] = useState([]); 
+  const [deckTypes, setDeckTypes] = useState([]); 
   const [activeScenario, setActiveScenario] = useState('');
-  const [activeDeckType, setActiveDeckType] = useState('調查牌組');
+  const [activeDeckType, setActiveDeckType] = useState('');
+  
   const [searchId, setSearchId] = useState('');
   const [currentCard, setCurrentCard] = useState(null);
   const [cardList, setCardList] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isVoicePlaying, setIsVoicePlaying] = useState(false);
 
-  // 上傳狀態管理
   const [uploadStatus, setUploadStatus] = useState('');
   const [uploadProgress, setUploadProgress] = useState(0);
 
+  // 初始化連線
   useEffect(() => {
     const initApp = async () => {
       try {
         await getDocs(collection(db, "system_check"));
         setDbStatus('連線成功');
-        await refreshScenarios();
+        await refreshMetaData();
       } catch (error) {
         setDbStatus('連線失敗');
       }
@@ -47,19 +50,27 @@ export default function App() {
     initApp();
   }, []);
 
-  const refreshScenarios = async () => {
+  const refreshMetaData = async () => {
     try {
       const querySnapshot = await getDocs(collection(db, "cards"));
-      const names = new Set();
-      querySnapshot.forEach(doc => names.add(doc.data().scenario));
-      const list = Array.from(names);
-      setScenarios(list);
-      if (list.length > 0 && !activeScenario) setActiveScenario(list[0]);
+      const scenarioSet = new Set();
+      const deckTypeSet = new Set();
+      querySnapshot.forEach(doc => {
+        const data = doc.data();
+        if (data.scenario) scenarioSet.add(data.scenario);
+        if (data.deckType) deckTypeSet.add(data.deckType);
+      });
+      const sList = Array.from(scenarioSet);
+      const dList = Array.from(deckTypeSet);
+      setScenarios(sList);
+      setDeckTypes(dList);
+      if (sList.length > 0 && !activeScenario) setActiveScenario(sList[0]);
+      if (dList.length > 0 && !activeDeckType) setActiveDeckType(dList[0]);
     } catch (e) { console.error(e); }
   };
 
   useEffect(() => {
-    if (activeScenario) fetchFilteredCards();
+    if (activeScenario && activeDeckType) fetchFilteredCards();
   }, [activeScenario, activeDeckType]);
 
   const fetchFilteredCards = async () => {
@@ -73,78 +84,97 @@ export default function App() {
     } finally { setIsSearching(false); }
   };
 
-  const startRitual = () => {
-    setIsUnlocked(true);
-    playBgm();
-  };
-
-  const playBgm = () => {
-    if (!activeBgm.src) return;
-    bgmAudio.current.src = activeBgm.src;
-    bgmAudio.current.loop = true;
-    bgmAudio.current.volume = bgmVolume;
-    bgmAudio.current.play().catch(() => {});
+  // 背景音樂控制 (Howler 版本)
+  const initBgm = () => {
+    if (bgmRef.current) bgmRef.current.unload();
+    bgmRef.current = new Howl({
+      src: [activeBgm.src],
+      loop: true,
+      volume: bgmVolume,
+      html5: true,
+    });
+    bgmRef.current.play();
   };
 
   useEffect(() => {
-    if (isUnlocked) playBgm();
+    if (isUnlocked) initBgm();
   }, [activeBgm, isUnlocked]);
 
   useEffect(() => {
-    bgmAudio.current.volume = bgmVolume;
+    if (bgmRef.current) bgmRef.current.volume(bgmVolume);
   }, [bgmVolume]);
 
-  const playVoice = (url) => {
-    if (!isUnlocked || !url) return;
-    voiceAudio.current.pause();
-    setIsVoicePlaying(true);
-    voiceAudio.current.crossOrigin = "anonymous";
-    voiceAudio.current.src = url;
-    voiceAudio.current.play()
-      .then(() => console.log("播放開始"))
-      .catch(e => {
-        setIsVoicePlaying(false);
-        alert("無法播放音檔，請確認 Firebase Rules 是否設為 allow read: if true");
-      });
-    voiceAudio.current.onended = () => setIsVoicePlaying(false);
+  const startRitual = () => {
+    setIsUnlocked(true);
+    // 強制啟動 HowlerContext
+    Howler.unload();
+    initBgm();
   };
 
-  // 管理員專用：處理資料夾上傳
+  // 語音播放控制 (深度偵錯版)
+  const playVoice = (url) => {
+    if (!isUnlocked || !url) {
+      console.warn("無法啟動播放：未解鎖或無網址");
+      return;
+    }
+
+    // 🕵️ 偵錯點：直接在 Console 印出網址
+    console.log("------------------------------------");
+    console.log("【偵錯資訊】準備播放卡牌音檔");
+    console.log("音檔網址:", url);
+    console.log("------------------------------------");
+
+    if (voiceRef.current) voiceRef.current.unload();
+
+    setIsVoicePlaying(true);
+    
+    // 使用 Howl 處理 Firebase 網址時，html5: true 是繞過 CORS 的關鍵
+    voiceRef.current = new Howl({
+      src: [url],
+      html5: true, 
+      format: ['mp3', 'wav', 'm4a', 'aac'],
+      onplay: () => console.log("音訊開始流動..."),
+      onend: () => setIsVoicePlaying(false),
+      onstop: () => setIsVoicePlaying(false),
+      onloaderror: (id, err) => {
+        console.error("【載入錯誤】代碼:", err);
+        setIsVoicePlaying(false);
+        alert(`音檔載入失敗。網址已印在控制台，請手動檢查。`);
+      },
+      onplayerror: (id, err) => {
+        console.error("【播放錯誤】:", err);
+        voiceRef.current.once('unlock', () => voiceRef.current.play());
+      }
+    });
+    
+    voiceRef.current.play();
+  };
+
   const handleFolderSelect = async (event) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
-
-    setUploadStatus(`偵測到 ${files.length} 個檔案，準備奉獻...`);
+    setUploadStatus(`正在編錄 ${files.length} 個檔案...`);
     let uploadedCount = 0;
-
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       if (!file.type.startsWith('audio/')) continue;
-
       const cardId = file.name.split('.')[0].toUpperCase();
       const pathParts = file.webkitRelativePath.split('/');
       let scen = pathParts.length >= 3 ? pathParts[pathParts.length - 3] : "未分類劇本";
       let deck = pathParts.length >= 2 ? pathParts[pathParts.length - 2] : "未分類牌組";
-
       try {
         const storageRef = ref(storage, `audios/${scen}/${deck}/${file.name}`);
-        const uploadTask = await uploadBytesResumable(storageRef, file);
+        await uploadBytesResumable(storageRef, file);
         const downloadURL = await getDownloadURL(storageRef);
-
         await setDoc(doc(db, "cards", cardId), {
           id: cardId, scenario: scen, deckType: deck, audioUrl: downloadURL, uploadedAt: new Date().toISOString()
         });
-
         uploadedCount++;
         setUploadProgress(Math.round((uploadedCount / files.length) * 100));
-        setUploadStatus(`轉移中: ${cardId} (${uploadedCount}/${files.length})`);
-      } catch (error) {
-        console.error("上傳失敗:", error);
-      }
+      } catch (error) { console.error(error); }
     }
-
-    setUploadStatus("奉獻儀式完成！");
-    await refreshScenarios();
+    setUploadStatus("奉獻成功！");
+    await refreshMetaData();
     setTimeout(() => { setUploadStatus(''); setUploadProgress(0); }, 3000);
   };
 
@@ -153,7 +183,7 @@ export default function App() {
       {!isUnlocked && (
         <div className="fixed inset-0 z-[100] bg-black bg-opacity-95 flex flex-col items-center justify-center p-6 text-center">
           <div className="border border-[var(--text-highlight)] p-12">
-            <h1 className="text-4xl font-black text-[var(--text-highlight)] mb-8 tracking-[0.5em]">終端機解鎖</h1>
+            <h1 className="text-4xl font-black text-[var(--text-highlight)] mb-8 tracking-[0.5em]">系統解鎖</h1>
             <button onClick={startRitual} className="px-12 py-5 bg-[var(--text-highlight)] text-black font-black hover:scale-105 active:scale-95 transition-all">
               進入檔案庫
             </button>
@@ -179,7 +209,6 @@ export default function App() {
       </header>
 
       <main className="flex-1 flex p-6 gap-6 overflow-hidden">
-        {/* 左側選單 */}
         <div className="w-56 flex flex-col gap-6 border-r border-[var(--border-color)] pr-4 overflow-y-auto">
           <section>
             <p className="text-[var(--text-highlight)] text-[10px] mb-3 opacity-50 uppercase tracking-widest text-center">Scenario</p>
@@ -194,7 +223,7 @@ export default function App() {
           <section>
             <p className="text-[var(--text-highlight)] text-[10px] mb-3 opacity-50 uppercase tracking-widest text-center">Deck</p>
             <div className="flex flex-col gap-2">
-              {['核心卡牌', '討論牌組', '調查牌組'].map(d => (
+              {deckTypes.map(d => (
                 <button key={d} onClick={() => {setActiveDeckType(d); setIsAdmin(false);}} className={`p-3 text-[11px] text-left border transition ${activeDeckType === d ? 'border-[var(--text-highlight)] text-[var(--text-highlight)] font-bold' : 'border-[var(--border-color)] opacity-40'}`}>
                   {d}
                 </button>
@@ -203,48 +232,30 @@ export default function App() {
           </section>
         </div>
 
-        {/* 右側內容區塊 */}
         <div className="flex-1 flex flex-col gap-4 overflow-hidden">
           <div className="flex gap-2">
-            <input 
-              type="text" placeholder="輸入編號檢索..." 
-              className="flex-1 p-4 bg-[var(--bg-panel)] border border-[var(--border-color)] text-xl outline-none"
-              value={searchId} onChange={(e) => setSearchId(e.target.value)}
-            />
+            <input type="text" placeholder="輸入編號檢索..." className="flex-1 p-4 bg-[var(--bg-panel)] border border-[var(--border-color)] text-xl outline-none" value={searchId} onChange={(e) => setSearchId(e.target.value)} />
             <button onClick={() => {
               const id = searchId.trim().toUpperCase();
               if(id) {
                 getDoc(doc(db, "cards", id)).then(ds => {
                   if(ds.exists()) { setIsAdmin(false); setCurrentCard(ds.data()); playVoice(ds.data().audioUrl); }
-                  else alert("此檔案尚未編錄。");
+                  else alert("查無此號。");
                 });
               }
             }} className="px-8 bg-[var(--text-highlight)] text-black font-bold uppercase">Seek</button>
           </div>
 
           <div className="flex-1 border border-[var(--border-color)] p-8 flex flex-col items-center justify-center relative bg-[var(--bg-panel)] bg-opacity-20 overflow-y-auto">
-            
-            {/* 優先顯示管理員上傳介面 */}
             {isAdmin ? (
               <div className="w-full max-w-xl text-center">
-                <h2 className="text-2xl font-bold text-[var(--text-highlight)] mb-8">管理員控制終端</h2>
-                <div className="relative border-2 border-dashed border-[var(--text-highlight)] p-16 bg-black bg-opacity-40 group hover:bg-opacity-60 transition-all cursor-pointer">
+                <div className="relative border-2 border-dashed border-[var(--text-highlight)] p-16 bg-black bg-opacity-40 hover:bg-opacity-60 transition-all cursor-pointer">
                   <input type="file" webkitdirectory="true" directory="true" multiple onChange={handleFolderSelect} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
-                  <div className="flex flex-col items-center">
-                    <span className="text-6xl mb-4">📁</span>
-                    <p className="text-xl font-bold">{uploadStatus || "點擊或拖放『劇本資料夾』以奉獻"}</p>
-                    <p className="text-xs opacity-40 mt-4 underline">結構必須為：劇本名 / 分類名 / 音檔.mp3</p>
-                  </div>
-                  {uploadProgress > 0 && (
-                    <div className="absolute bottom-0 left-0 h-1 bg-[var(--text-highlight)] transition-all" style={{ width: `${uploadProgress}%` }}></div>
-                  )}
+                  <p className="text-xl font-bold">{uploadStatus || "上傳包含劇本與牌組的資料夾"}</p>
                 </div>
-                <button onClick={() => setIsAdmin(false)} className="mt-8 text-xs opacity-40 hover:underline">離開管理模式</button>
               </div>
-            ) : isSearching ? (
-              <div className="animate-pulse">讀取中...</div>
             ) : currentCard ? (
-              <div className="text-center w-full animate-fadeIn">
+              <div className="text-center w-full">
                 <span className="text-[var(--text-highlight)] text-[10px] tracking-widest uppercase opacity-40">{currentCard.scenario} / {currentCard.deckType}</span>
                 <h2 className="text-[10rem] font-black leading-none my-8 tracking-tighter">{currentCard.id}</h2>
                 <button 
@@ -253,19 +264,13 @@ export default function App() {
                 >
                   {isVoicePlaying ? '🔊' : '▶'}
                 </button>
-                <button onClick={() => { voiceAudio.current.pause(); setCurrentCard(null); }} className="block mt-10 text-[10px] opacity-30 hover:underline mx-auto">DISMISS</button>
+                <button onClick={() => { if(voiceRef.current) voiceRef.current.unload(); setCurrentCard(null); }} className="block mt-10 text-[10px] opacity-30 hover:underline mx-auto">DISMISS</button>
               </div>
             ) : (
               <div className="w-full h-full">
                 <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-6 gap-2">
                   {cardList.map(card => (
-                    <button 
-                      key={card.id} 
-                      onClick={() => { setCurrentCard(card); playVoice(card.audioUrl); }}
-                      className="aspect-square border border-[var(--border-color)] bg-[var(--bg-panel)] flex items-center justify-center text-2xl font-bold hover:border-[var(--text-highlight)] transition"
-                    >
-                      {card.id}
-                    </button>
+                    <button key={card.id} onClick={() => { setCurrentCard(card); playVoice(card.audioUrl); }} className="aspect-square border border-[var(--border-color)] bg-[var(--bg-panel)] flex items-center justify-center text-2xl font-bold hover:border-[var(--text-highlight)] transition">{card.id}</button>
                   ))}
                 </div>
               </div>
