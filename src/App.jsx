@@ -18,85 +18,124 @@ export default function App() {
   const [bgmVolume, setBgmVolume] = useState(0.2);
   const [bgmSound, setBgmSound] = useState(null);
   
-  // 管理員與連線狀態
   const [isAdmin, setIsAdmin] = useState(false);
   const [dbStatus, setDbStatus] = useState('連線中...');
   
-  // 資料狀態
+  // 資料篩選狀態
+  const [scenarios, setScenarios] = useState([]); // 所有的劇本清單
+  const [activeScenario, setActiveScenario] = useState(''); // 當前選中的劇本
+  const [activeDeckType, setActiveDeckType] = useState('調查牌組'); // 當前選中的牌組類型
+  
   const [searchId, setSearchId] = useState('');
   const [currentCard, setCurrentCard] = useState(null);
-  const [cardList, setCardList] = useState([]); // 當前分類的卡牌清單
-  const [activeCategory, setActiveCategory] = useState('調查牌組'); // 預設分類
+  const [cardList, setCardList] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
 
-  // 上傳狀態
   const [uploadStatus, setUploadStatus] = useState('');
   const [uploadProgress, setUploadProgress] = useState(0);
 
-  // 播放器狀態
+  // 播放器實體
   const [voiceSound, setVoiceSound] = useState(null);
   const [isVoicePlaying, setIsVoicePlaying] = useState(false);
 
-  // 1. 初始化連線與讀取預設分類
+  // 1. 初始化：檢查連線並抓取「所有劇本名稱」
   useEffect(() => {
     const initApp = async () => {
       try {
         await getDocs(collection(db, "system_check"));
-        setDbStatus('連線成功 (終端已連線)');
-        fetchCategoryData('調查牌組'); // 初始載入
+        setDbStatus('連線成功');
+        await refreshScenarios();
       } catch (error) {
-        setDbStatus('連線失敗 (迷失於虛空)');
+        setDbStatus('連線失敗');
       }
     };
     initApp();
   }, []);
 
-  // 2. 根據分類抓取資料
-  const fetchCategoryData = async (category) => {
-    setIsSearching(true);
-    setActiveCategory(category);
-    setCurrentCard(null);
+  // 2. 從資料庫抓取所有不重複的劇本名稱
+  const refreshScenarios = async () => {
     try {
-      const q = query(collection(db, "cards"), where("deckType", "==", category));
+      const querySnapshot = await getDocs(collection(db, "cards"));
+      const names = new Set();
+      querySnapshot.forEach(doc => names.add(doc.data().scenario));
+      const scenarioList = Array.from(names);
+      setScenarios(scenarioList);
+      if (scenarioList.length > 0 && !activeScenario) {
+        setActiveScenario(scenarioList[0]);
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  // 3. 當劇本或牌組類型改變時，刷新卡牌清單
+  useEffect(() => {
+    if (activeScenario) {
+      fetchFilteredCards();
+    }
+  }, [activeScenario, activeDeckType]);
+
+  const fetchFilteredCards = async () => {
+    setIsSearching(true);
+    try {
+      const q = query(
+        collection(db, "cards"), 
+        where("scenario", "==", activeScenario),
+        where("deckType", "==", activeDeckType)
+      );
       const querySnapshot = await getDocs(q);
       const items = [];
-      querySnapshot.forEach((doc) => {
-        items.push(doc.data());
-      });
+      querySnapshot.forEach((doc) => items.push(doc.data()));
       setCardList(items);
     } catch (error) {
-      console.error("讀取分類失敗:", error);
+      console.error(error);
     } finally {
       setIsSearching(false);
     }
   };
 
-  // 3. 檢索功能 (精確匹配)
+  // 4. 語音播放功能 (使用更穩定的配置)
+  const playVoice = (url) => {
+    // 如果正在播放，先停止舊的
+    if (voiceSound) {
+      voiceSound.stop();
+      voiceSound.unload();
+    }
+
+    const sound = new Howl({
+      src: [url],
+      html5: true, // 必須開啟，否則大檔案會載入失敗
+      format: ['mp3', 'wav', 'm4a'],
+      autoplay: false,
+      onplay: () => setIsVoicePlaying(true),
+      onend: () => setIsVoicePlaying(false),
+      onstop: () => setIsVoicePlaying(false),
+      onloaderror: (id, err) => console.error("音檔載入錯誤:", err),
+      onplayerror: (id, err) => {
+        console.error("播放錯誤:", err);
+        sound.unlock(); // 嘗試解鎖音訊上下文
+      }
+    });
+    
+    sound.play();
+    setVoiceSound(sound);
+  };
+
+  // 5. 搜尋功能
   const handleSearch = async (e) => {
     if (e) e.preventDefault();
     const id = searchId.trim().toUpperCase();
     if (!id) return;
-
     setIsSearching(true);
-    if (voiceSound) voiceSound.stop();
-
     try {
-      const docRef = doc(db, "cards", id);
-      const docSnap = await getDoc(docRef);
-
+      const docSnap = await getDoc(doc(db, "cards", id));
       if (docSnap.exists()) {
         setCurrentCard(docSnap.data());
       } else {
-        alert(`編號 ${id} 不存在於禁忌檔案中。`);
+        alert("找不到此編號。");
       }
-    } catch (error) {
-      console.error("檢索錯誤:", error);
-    } finally {
-      setIsSearching(false);
-    }
+    } finally { setIsSearching(false); }
   };
 
-  // 背景音樂與語音邏輯 (保持原有邏輯)
+  // 背景音樂 (維持原樣)
   useEffect(() => {
     if (bgmSound) bgmSound.stop();
     if (activeBgm.src) {
@@ -109,139 +148,132 @@ export default function App() {
 
   useEffect(() => { if (bgmSound) bgmSound.volume(bgmVolume); }, [bgmVolume]);
 
-  const playVoice = (url) => {
-    if (voiceSound) voiceSound.stop();
-    const sound = new Howl({
-      src: [url], html5: true,
-      onplay: () => setIsVoicePlaying(true),
-      onend: () => setIsVoicePlaying(false),
-      onstop: () => setIsVoicePlaying(false)
-    });
-    sound.play();
-    setVoiceSound(sound);
-  };
-
   const handleSecretClick = () => {
-    const password = prompt("請輸入古老密語：");
-    if (password === 'phnglui') { setIsAdmin(true); alert("管理權限已開啟。"); }
+    const password = prompt("密語：");
+    if (password === 'phnglui') { setIsAdmin(true); }
   };
 
-  // 上傳功能 (保持原有路徑拆解邏輯)
   const handleFolderSelect = async (event) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
-    let validFilesCount = 0;
-    for (let i = 0; i < files.length; i++) if (files[i].type.startsWith('audio/')) validFilesCount++;
-    setUploadStatus(`準備奉獻 ${validFilesCount} 份檔案...`);
-    let uploadedCount = 0;
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
+    setUploadStatus("啟動奉獻程序...");
+    let uploaded = 0;
+    for (let file of files) {
       if (!file.type.startsWith('audio/')) continue;
       const cardId = file.name.split('.')[0].toUpperCase();
       const pathParts = file.webkitRelativePath.split('/');
-      let scenarioName = pathParts.length >= 3 ? pathParts[pathParts.length - 3] : "未分類劇本";
-      let deckType = pathParts.length >= 2 ? pathParts[pathParts.length - 2] : "未分類牌組";
-
+      let scen = pathParts.length >= 3 ? pathParts[pathParts.length - 3] : "未分類劇本";
+      let deck = pathParts.length >= 2 ? pathParts[pathParts.length - 2] : "未分類牌組";
       try {
-        const storageRef = ref(storage, `audios/${scenarioName}/${deckType}/${file.name}`);
-        await uploadBytesResumable(storageRef, file);
-        const downloadURL = await getDownloadURL(storageRef);
+        const sRef = ref(storage, `audios/${scen}/${deck}/${file.name}`);
+        await uploadBytesResumable(sRef, file);
+        const url = await getDownloadURL(sRef);
         await setDoc(doc(db, "cards", cardId), {
-          id: cardId, fileName: file.name, scenario: scenarioName,
-          deckType: deckType, audioUrl: downloadURL, uploadedAt: new Date().toISOString()
+          id: cardId, scenario: scen, deckType: deck, audioUrl: url
         });
-        uploadedCount++;
-        setUploadProgress(Math.round((uploadedCount / validFilesCount) * 100));
+        uploaded++;
+        setUploadProgress(Math.round((uploaded / files.length) * 100));
       } catch (e) { console.error(e); }
     }
-    setUploadStatus(`完成！已上傳 ${uploadedCount} 個檔案。`);
-    fetchCategoryData(activeCategory); // 刷新當前列表
-    setTimeout(() => { setUploadStatus(''); setUploadProgress(0); }, 3000);
+    setUploadStatus("完成");
+    await refreshScenarios();
+    setTimeout(() => { setUploadStatus(''); setUploadProgress(0); }, 2000);
   };
 
   return (
     <div className={`w-screen h-screen flex flex-col ${theme}`}>
       <header className="flex justify-between items-center p-4 border-b border-[var(--border-color)] bg-[var(--bg-panel)]">
-        <div className="text-xl font-bold cursor-pointer select-none text-[var(--text-highlight)]" onClick={handleSecretClick}>
+        <div className="text-xl font-bold cursor-pointer text-[var(--text-highlight)]" onClick={handleSecretClick}>
           👁️ 禁忌檔案庫 {isAdmin && " [管理模式]"}
         </div>
-        <div className="flex items-center space-x-6 text-sm">
-          <div className="opacity-80">狀態：{dbStatus}</div>
-          <div className="flex items-center space-x-2">
-            <span>🎵</span>
-            <select className="bg-[var(--bg-primary)] border border-[var(--border-color)] p-1 outline-none" value={activeBgm.id} onChange={(e) => setActiveBgm(bgmOptions.find(b => b.id === e.target.value))}>
-              {bgmOptions.map(bgm => <option key={bgm.id} value={bgm.id}>{bgm.name}</option>)}
-            </select>
-            <input type="range" min="0" max="1" step="0.05" value={bgmVolume} onChange={(e) => setBgmVolume(parseFloat(e.target.value))} className="w-20" />
-          </div>
+        <div className="flex items-center space-x-4 text-sm">
+          <div>狀態：{dbStatus}</div>
+          <select className="bg-[var(--bg-primary)] p-1 border border-[var(--border-color)]" value={activeBgm.id} onChange={(e) => setActiveBgm(bgmOptions.find(b => b.id === e.target.value))}>
+            {bgmOptions.map(bgm => <option key={bgm.id} value={bgm.id}>{bgm.name}</option>)}
+          </select>
+          <input type="range" min="0" max="1" step="0.1" value={bgmVolume} onChange={(e) => setBgmVolume(parseFloat(e.target.value))} className="w-16" />
         </div>
       </header>
 
       <main className="flex-1 flex p-6 gap-6 overflow-hidden">
-        {/* 左側分類 */}
-        <div className="w-48 flex flex-col gap-4 border-r border-[var(--border-color)] pr-4">
-          {['核心卡牌', '討論牌組', '調查牌組'].map(cat => (
-            <button 
-              key={cat}
-              onClick={() => fetchCategoryData(cat)}
-              className={`p-3 text-left border border-[var(--border-color)] transition ${activeCategory === cat ? 'bg-[var(--text-highlight)] text-black font-bold' : 'bg-[var(--bg-panel)] hover:border-[var(--text-highlight)]'}`}
-            >
-              📁 {cat}
-            </button>
-          ))}
+        {/* 左側：劇本與分類篩選 */}
+        <div className="w-56 flex flex-col gap-6 border-r border-[var(--border-color)] pr-4 overflow-y-auto">
+          <div>
+            <p className="text-[var(--text-highlight)] text-xs mb-2 opacity-60">1. 選擇劇本</p>
+            <div className="flex flex-col gap-2">
+              {scenarios.map(scen => (
+                <button 
+                  key={scen}
+                  onClick={() => setActiveScenario(scen)}
+                  className={`p-2 text-sm text-left border ${activeScenario === scen ? 'border-[var(--text-highlight)] bg-[var(--text-highlight)] text-black' : 'border-[var(--border-color)] hover:border-[var(--text-highlight)]'}`}
+                >
+                  📖 {scen}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <p className="text-[var(--text-highlight)] text-xs mb-2 opacity-60">2. 分類檢索</p>
+            <div className="flex flex-col gap-2">
+              {['核心卡牌', '討論牌組', '調查牌組'].map(deck => (
+                <button 
+                  key={deck}
+                  onClick={() => setActiveDeckType(deck)}
+                  className={`p-2 text-sm text-left border ${activeDeckType === deck ? 'border-[var(--text-highlight)] bg-[var(--bg-panel)]' : 'border-[var(--border-color)] opacity-60'}`}
+                >
+                  📁 {deck}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
-        {/* 右側內容 */}
+        {/* 右側：搜尋與顯示 */}
         <div className="flex-1 flex flex-col gap-4 overflow-hidden">
           <form onSubmit={handleSearch} className="flex gap-2">
             <input 
-              type="text" placeholder="輸入編號檢索，或從下方清單選取..." 
-              className="flex-1 p-3 bg-[var(--bg-panel)] border border-[var(--border-color)] text-[var(--text-primary)] focus:border-[var(--text-highlight)] text-lg outline-none"
+              type="text" placeholder="輸入編號 (如: 72B)..." 
+              className="flex-1 p-3 bg-[var(--bg-panel)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none"
               value={searchId} onChange={(e) => setSearchId(e.target.value)}
             />
-            <button type="submit" className="px-6 bg-[var(--text-highlight)] text-black font-bold hover:opacity-80">檢索</button>
+            <button type="submit" className="px-6 bg-[var(--text-highlight)] text-black font-bold">檢索</button>
           </form>
           
-          <div className="flex-1 border border-[var(--border-color)] p-6 flex flex-col items-center justify-center relative bg-[var(--bg-panel)] bg-opacity-30 overflow-y-auto">
-            
+          <div className="flex-1 border border-[var(--border-color)] p-6 flex flex-col items-center justify-center relative bg-[var(--bg-panel)] bg-opacity-20 overflow-y-auto">
             {isSearching ? (
-              <p className="animate-pulse text-[var(--text-highlight)]">正在檢索深淵檔案...</p>
+              <p className="animate-pulse">正在讀取...</p>
             ) : currentCard ? (
-              <div className="text-center animate-fadeIn">
-                <div className="mb-2 text-[var(--text-highlight)] text-sm">{currentCard.scenario} / {currentCard.deckType}</div>
-                <h2 className="text-7xl font-bold mb-8">{currentCard.id}</h2>
+              <div className="text-center">
+                <p className="text-[var(--text-highlight)] text-sm mb-2">{currentCard.scenario} / {currentCard.deckType}</p>
+                <h2 className="text-8xl font-bold mb-10 tracking-tighter">{currentCard.id}</h2>
                 <button 
                   onClick={() => playVoice(currentCard.audioUrl)}
-                  className={`w-24 h-24 rounded-full border-4 flex items-center justify-center text-3xl ${isVoicePlaying ? 'border-[var(--text-highlight)] animate-ping' : 'border-[var(--text-primary)]'}`}
+                  className={`w-28 h-28 rounded-full border-4 flex items-center justify-center text-4xl transition-all ${isVoicePlaying ? 'border-[var(--text-highlight)] animate-pulse shadow-[0_0_20px_var(--text-highlight)]' : 'border-[var(--text-primary)]'}`}
                 >
                   {isVoicePlaying ? '🔊' : '▶️'}
                 </button>
-                <button onClick={() => setCurrentCard(null)} className="block mt-8 text-sm opacity-50 hover:underline mx-auto">返回清單</button>
+                <button onClick={() => {if(voiceSound)voiceSound.stop(); setCurrentCard(null);}} className="block mt-10 text-xs opacity-40 hover:underline mx-auto">關閉檔案</button>
               </div>
             ) : isAdmin ? (
-              <div className="text-center w-full max-w-lg">
-                <h2 className="text-2xl text-[var(--text-highlight)] mb-6 font-bold">管理員控制台</h2>
-                <div className="relative p-10 border-2 border-dashed border-[var(--border-color)] hover:border-[var(--text-highlight)] bg-[var(--bg-panel)] min-h-[200px] flex items-center justify-center">
-                  <input type="file" webkitdirectory="true" directory="true" multiple onChange={handleFolderSelect} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
-                  <div className="text-center">
-                    {uploadStatus ? <p className="font-bold text-[var(--text-highlight)]">{uploadStatus}</p> : <p>📁 點擊此處奉獻整包資料夾</p>}
-                  </div>
-                </div>
+              <div className="text-center w-full max-w-md p-10 border-2 border-dashed border-[var(--border-color)] relative">
+                <input type="file" webkitdirectory="true" directory="true" multiple onChange={handleFolderSelect} className="absolute inset-0 opacity-0 cursor-pointer" />
+                <p className="text-xl mb-2">📁 批次上傳劇本資料夾</p>
+                <p className="text-xs opacity-50">{uploadStatus || "支援多層級結構"}</p>
               </div>
             ) : (
-              <div className="w-full h-full">
-                <p className="text-sm text-[var(--text-highlight)] mb-4">現有檔案清單 ({activeCategory})：</p>
-                <div className="grid grid-cols-4 gap-4">
-                  {cardList.length > 0 ? cardList.map(card => (
+              <div className="w-full">
+                <p className="text-xs text-[var(--text-highlight)] mb-4">發現 {cardList.length} 份關聯檔案：</p>
+                <div className="grid grid-cols-4 sm:grid-cols-6 gap-3">
+                  {cardList.map(card => (
                     <div 
                       key={card.id}
-                      onClick={() => setCurrentCard(card)}
-                      className="p-4 border border-[var(--border-color)] bg-[var(--bg-panel)] cursor-pointer hover:border-[var(--text-highlight)] text-center transition"
+                      onClick={() => { setCurrentCard(card); playVoice(card.audioUrl); }}
+                      className="p-3 border border-[var(--border-color)] bg-[var(--bg-panel)] cursor-pointer hover:border-[var(--text-highlight)] hover:bg-[var(--bg-primary)] transition text-center"
                     >
-                      <div className="text-xl font-bold">{card.id}</div>
-                      <div className="text-[10px] opacity-40 truncate">{card.scenario}</div>
+                      <div className="text-lg font-bold">{card.id}</div>
                     </div>
-                  )) : <p className="col-span-4 opacity-30 text-center py-10">此分類目前無編錄檔案</p>}
+                  ))}
                 </div>
               </div>
             )}
