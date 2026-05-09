@@ -37,15 +37,12 @@ export default function App() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [currentUploadingFile, setCurrentUploadingFile] = useState('');
 
-  // 初始化資料庫連線
   useEffect(() => {
     const initApp = async () => {
       try {
         await getDocs(collection(db, "system_check"));
         await fetchScenarios();
-      } catch (error) {
-        console.error("Database connection failed");
-      }
+      } catch (error) { console.error(error); }
     };
     initApp();
   }, []);
@@ -64,7 +61,6 @@ export default function App() {
     } catch (e) { console.error(e); }
   };
 
-  // 管理員觸發機制：五連擊
   const handleAdminTrigger = () => {
     const newCount = adminClickCount + 1;
     if (newCount >= 5) {
@@ -77,7 +73,6 @@ export default function App() {
     }
   };
 
-  // 劇本連動停止音訊
   useEffect(() => {
     if (activeScenario) {
       if (voiceRef.current) voiceRef.current.stop();
@@ -184,115 +179,98 @@ export default function App() {
 
   return (
     <div className="w-screen h-screen flex flex-col overflow-hidden bg-[#0a0a0a] text-[#c9b99a] font-sans selection:bg-[#ffb74d] selection:text-black">
-      {/* 全域暗角與噪點 */}
       <div className="fixed inset-0 pointer-events-none opacity-[0.05] z-[9999] bg-[url('https://www.transparenttextures.com/patterns/micro-carbon.png')]"></div>
-      <div className="fixed inset-0 pointer-events-none z-[9998] shadow-[inset_0_0_150px_rgba(0,0,0,0.9)]"></div>
-
+      
       {!isUnlocked && (
-        <div className="fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center p-10 text-center">
-          <div className="relative p-24 border border-[#222] bg-[#050505] shadow-[0_0_100px_rgba(0,0,0,0.8)]">
-            <h1 className="text-6xl md:text-8xl font-bold text-[#ffb74d] mb-16 tracking-[1.2em] drop-shadow-[0_0_30px_rgba(255,183,77,0.3)]">禁忌檔案庫</h1>
-            <button onClick={startRitual} className="px-24 py-10 border-2 border-[#ffb74d] text-[#ffb74d] text-3xl font-bold hover:bg-[#ffb74d] hover:text-black transition-all duration-700 tracking-[0.8em]">INITIATE</button>
+        <div className="fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center p-6 text-center">
+          <div className="relative p-16 border border-[#222] bg-[#050505]">
+            <h1 className="text-5xl md:text-6xl font-bold text-[#ffb74d] mb-12 tracking-[1em]">禁忌檔案庫</h1>
+            <button onClick={startRitual} className="px-16 py-6 border-2 border-[#ffb74d] text-[#ffb74d] text-xl font-bold tracking-[0.5em]">啟動檢索</button>
           </div>
         </div>
       )}
 
-      {/* Header - iPad 優化高度與間距 */}
-      <header className="flex-none flex justify-between items-center px-12 py-10 border-b border-[#1a1a1a] bg-[#050505] z-20">
-        <div className="flex items-center gap-10">
-          <div className="w-16 h-16 border border-[#ffb74d]/40 flex items-center justify-center text-3xl rotate-45 text-[#ffb74d] shadow-[0_0_20px_rgba(255,183,77,0.1)]">👁️</div>
-          <div className="text-4xl md:text-5xl font-bold text-[#ffb74d] cursor-pointer tracking-widest hover:brightness-125 transition-all" onClick={handleAdminTrigger}>
-            禁忌檔案庫 {isAdmin && <span className="text-sm ml-4 text-red-500 animate-pulse">[管理模式]</span>}
+      {/* Header - iPad 適配高度 */}
+      <header className="flex-none flex justify-between items-center px-8 py-6 border-b border-[#1a1a1a] bg-[#050505] z-20">
+        <div className="flex items-center gap-6">
+          <div className="w-12 h-12 border border-[#ffb74d]/40 flex items-center justify-center text-xl rotate-45 text-[#ffb74d]">👁️</div>
+          <div className="text-3xl font-bold text-[#ffb74d] cursor-pointer tracking-widest" onClick={handleAdminTrigger}>
+            禁忌檔案庫 {isAdmin && <span className="text-xs ml-2 text-red-500 animate-pulse">[ADMIN]</span>}
           </div>
         </div>
-        <div className="flex items-center space-x-12">
-          <div className="flex items-center gap-8 px-10 py-5 border border-[#1a1a1a] bg-black/50 text-sm">
-            <span className="opacity-30 text-[#ffb74d] uppercase tracking-[0.3em] font-bold">BGM System</span>
-            <select className="bg-transparent outline-none text-[#ffb74d] font-bold" value={activeBgm.id} onChange={(e) => setActiveBgm(bgmOptions.find(b => b.id === e.target.value))}>
+        <div className="flex items-center space-x-6">
+          <div className="flex items-center gap-4 px-6 py-3 border border-[#1a1a1a] bg-black text-xs">
+            <span className="opacity-30 text-[#ffb74d] uppercase font-bold">BGM</span>
+            <select className="bg-transparent outline-none text-[#ffb74d]" value={activeBgm.id} onChange={(e) => setActiveBgm(bgmOptions.find(b => b.id === e.target.value))}>
               {bgmOptions.map(b => <option key={b.id} value={b.id} className="bg-[#050505]">{b.name}</option>)}
             </select>
-            <input type="range" min="0" max="1" step="0.01" value={bgmVolume} onChange={(e) => setBgmVolume(parseFloat(e.target.value))} className="w-48 h-1 accent-[#ffb74d] cursor-pointer" />
+            <input type="range" min="0" max="1" step="0.01" value={bgmVolume} onChange={(e) => setBgmVolume(parseFloat(e.target.value))} className="w-32 h-1 accent-[#ffb74d]" />
           </div>
         </div>
       </header>
 
-      {/* Main Layout - 修正 iPad 比例 */}
-      <main className="flex-1 flex p-12 gap-12 overflow-hidden relative min-h-0">
-        {/* 左側選單 - 獨立滾動且寬度自動適應 */}
-        <div className="w-72 md:w-80 lg:w-96 flex flex-col gap-12 overflow-y-auto pr-6 custom-scrollbar flex-none">
+      <main className="flex-1 flex p-8 gap-8 overflow-hidden relative min-h-0">
+        {/* 左選單 - 寬度微調 */}
+        <div className="w-64 md:w-72 flex flex-col gap-8 overflow-y-auto pr-4 custom-scrollbar flex-none">
           <section>
-            <p className="text-[#ffb74d] text-xs mb-8 opacity-40 uppercase tracking-[0.5em] font-bold border-l-4 border-[#ffb74d] pl-6">劇本清單</p>
-            <div className="flex flex-col gap-5">
+            <p className="text-[#ffb74d] text-[10px] mb-6 opacity-40 uppercase tracking-[0.4em] font-bold border-l-4 border-[#ffb74d] pl-4">劇本清單</p>
+            <div className="flex flex-col gap-4">
               {scenarios.map(s => (
-                <button key={s} onClick={() => {setActiveScenario(s); setIsAdmin(false);}} className={`p-8 text-2xl text-left border transition-all duration-500 ${activeScenario === s ? 'bg-[#ffb74d] text-black border-[#ffb74d] font-bold shadow-[0_10px_30px_rgba(255,183,77,0.2)] scale-[1.02]' : 'border-[#1a1a1a] bg-[#0a0a0a] hover:border-[#ffb74d]/50 hover:bg-[#111]'}`}>{s}</button>
+                <button key={s} onClick={() => {setActiveScenario(s); setIsAdmin(false);}} className={`p-5 text-xl text-left border transition-all ${activeScenario === s ? 'bg-[#ffb74d] text-black border-[#ffb74d] font-bold' : 'border-[#1a1a1a] bg-[#0a0a0a]'}`}>{s}</button>
               ))}
             </div>
           </section>
           <section>
-            <p className="text-[#ffb74d] text-xs mb-8 opacity-40 uppercase tracking-[0.5em] font-bold border-l-4 border-[#ffb74d] pl-6">檔案分類</p>
-            <div className="flex flex-col gap-5">
+            <p className="text-[#ffb74d] text-[10px] mb-6 opacity-40 uppercase tracking-[0.4em] font-bold border-l-4 border-[#ffb74d] pl-4">檔案分類</p>
+            <div className="flex flex-col gap-4">
               {availableDecks.map(d => (
-                <button key={d} onClick={() => {setActiveDeckType(d); setIsAdmin(false);}} className={`p-8 text-xl text-left border transition-all duration-500 ${activeDeckType === d ? 'border-[#ffb74d] text-[#ffb74d] bg-[#ffb74d]/5 font-bold shadow-[inset_0_0_30px_rgba(255,183,77,0.1)]' : 'border-[#1a1a1a] bg-[#0a0a0a] opacity-50 hover:opacity-100 hover:border-[#ffb74d]/40'}`}>{d}</button>
+                <button key={d} onClick={() => {setActiveDeckType(d); setIsAdmin(false);}} className={`p-5 text-base text-left border transition-all ${activeDeckType === d ? 'border-[#ffb74d] text-[#ffb74d] bg-[#ffb74d]/5 font-bold' : 'border-[#1a1a1a] bg-[#0a0a0a] opacity-50'}`}>{d}</button>
               ))}
             </div>
           </section>
         </div>
 
-        {/* 右側檢索區域 - 修正滾動與佈局 */}
-        <div className="flex-1 flex flex-col gap-12 min-w-0 overflow-hidden">
-          <div className="flex-none flex gap-8">
-            <input type="text" placeholder="深度檢索編號..." className="flex-1 p-10 bg-[#050505] border border-[#1a1a1a] text-4xl outline-none focus:border-[#ffb74d] focus:bg-black transition-all placeholder:opacity-10" value={searchId} onChange={(e) => setSearchId(e.target.value)} />
+        {/* 右內容區 */}
+        <div className="flex-1 flex flex-col gap-6 min-w-0 overflow-hidden">
+          <div className="flex-none flex gap-4">
+            <input type="text" placeholder="輸入編號進行深度檢索..." className="flex-1 p-6 bg-[#050505] border border-[#1a1a1a] text-2xl outline-none focus:border-[#ffb74d]" value={searchId} onChange={(e) => setSearchId(e.target.value)} />
             <button onClick={() => {
               const id = searchId.trim().toUpperCase();
               if(id) {
-                getDoc(doc(db, "cards", id)).then(ds => {
+                getDoc(doc(doc(db, "cards", id))).then(ds => {
                   if(ds.exists()) { setIsAdmin(false); setCurrentCard(ds.data()); playVoice(ds.data().audioUrl); }
                   else alert("此紀錄未被編錄。");
                 });
               }
-            }} className="px-24 bg-[#ffb74d] text-black font-bold uppercase text-2xl hover:brightness-110 active:scale-95 transition-all">Seek</button>
+            }} className="px-12 bg-[#ffb74d] text-black font-bold uppercase text-lg">Seek</button>
           </div>
 
-          {/* 內容容器 - 修正 iPad 滾動與網格比例 */}
-          <div className="flex-1 border border-[#1a1a1a] p-12 relative bg-[#050505] shadow-[inset_0_0_150px_rgba(0,0,0,0.8)] overflow-y-auto custom-scrollbar min-h-0 rounded-sm">
+          <div className="flex-1 border border-[#1a1a1a] p-8 relative bg-[#050505] overflow-y-auto custom-scrollbar min-h-0">
             {isAdmin ? (
-              <div className="w-full max-w-4xl mx-auto text-center py-16 animate-fadeIn">
-                <div className="relative border-2 border-dashed border-[#ffb74d]/20 p-32 bg-[#080808] hover:border-[#ffb74d]/60 transition-all cursor-pointer">
+              <div className="w-full max-w-2xl mx-auto text-center py-10">
+                <div className="relative border-2 border-dashed border-[#ffb74d]/20 p-20 bg-[#080808]">
                   <input type="file" webkitdirectory="true" directory="true" multiple onChange={handleFolderSelect} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
-                  <div className="flex flex-col items-center gap-12">
-                    <div className="text-[10rem] opacity-30">📁</div>
-                    <p className="text-5xl font-bold tracking-[0.2em] text-[#ffb74d]">{uploadStatus || "奉獻資料夾"}</p>
-                    {currentUploadingFile && <p className="text-xl font-mono text-[#ffb74d] animate-pulse">Processing: {currentUploadingFile}</p>}
-                  </div>
-                  {uploadProgress > 0 && (
-                    <div className="absolute bottom-0 left-0 w-full h-3 bg-black/50 overflow-hidden">
-                      <div className="h-full bg-[#ffb74d] shadow-[0_0_20px_#ffb74d]" style={{ width: `${uploadProgress}%` }}></div>
-                    </div>
-                  )}
+                  <p className="text-2xl font-bold text-[#ffb74d]">{uploadStatus || "奉獻資料夾"}</p>
                 </div>
-                <button onClick={() => setIsAdmin(false)} className="mt-20 text-sm opacity-20 hover:opacity-100 hover:text-[#ffb74d] transition-all tracking-[1em] uppercase border-b border-transparent hover:border-[#ffb74d] pb-2">Exit Management</button>
+                <button onClick={() => setIsAdmin(false)} className="mt-10 text-xs opacity-20 hover:opacity-100">Exit Admin</button>
               </div>
             ) : currentCard ? (
-              <div className="text-center w-full flex flex-col items-center py-20 animate-fadeIn h-full justify-center">
-                <div className="mb-12 flex items-center gap-12 opacity-30">
-                  <div className="h-[2px] w-40 bg-[#ffb74d]"></div>
-                  <span className="text-lg tracking-[1.5em] font-bold uppercase">{currentCard.scenario} / {currentCard.deckType}</span>
-                  <div className="h-[2px] w-40 bg-[#ffb74d]"></div>
-                </div>
-                <h2 className="text-[15rem] md:text-[20rem] font-bold leading-none my-20 tracking-tighter text-[#ffb74d] drop-shadow-[0_20px_80px_rgba(255,183,77,0.4)] select-none">{currentCard.id}</h2>
-                <button onClick={() => playVoice(currentCard.audioUrl)} className={`relative w-72 h-72 rounded-full border-4 flex items-center justify-center transition-all duration-1000 shadow-2xl ${isVoicePlaying ? 'border-[#ffb74d] bg-[#ffb74d]/10 animate-pulse' : 'border-[#c9b99a]/10 hover:border-[#ffb74d] hover:scale-110'}`}>
-                  <div className="text-[10rem]">{isVoicePlaying ? '⚡' : '▶'}</div>
+              <div className="text-center w-full flex flex-col items-center py-10 animate-fadeIn">
+                <span className="text-sm tracking-[1em] font-bold uppercase opacity-30 mb-8">{currentCard.scenario} / {currentCard.deckType}</span>
+                <h2 className="text-[12rem] md:text-[14rem] font-bold leading-none my-12 text-[#ffb74d] select-none break-all">{currentCard.id}</h2>
+                <button onClick={() => playVoice(currentCard.audioUrl)} className={`relative w-48 h-48 rounded-full border-4 flex items-center justify-center transition-all ${isVoicePlaying ? 'border-[#ffb74d] bg-[#ffb74d]/10' : 'border-[#c9b99a]/10 hover:border-[#ffb74d]'}`}>
+                  <div className="text-8xl">{isVoicePlaying ? '⚡' : '▶'}</div>
                 </button>
-                <button onClick={dismissCard} className="mt-32 px-24 py-8 border border-[#1a1a1a] text-lg opacity-20 hover:opacity-100 hover:bg-[#ffb74d] hover:text-black tracking-[1em] uppercase font-bold transition-all">Dismiss</button>
+                <button onClick={dismissCard} className="mt-20 px-12 py-5 border border-[#1a1a1a] text-sm opacity-20 hover:opacity-100 tracking-[0.5em] uppercase font-bold">Dismiss</button>
               </div>
             ) : (
-              /* iPad 優化網格 - 根據斷點自動調整 */
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-12 p-4">
+              /* 修正 iPad 網格 - 根據截圖顯示，建議列數固定在 2~4 欄 */
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
                 {cardList.map(card => (
-                  <button key={card.id} onClick={() => { setCurrentCard(card); playVoice(card.audioUrl); }} className="aspect-[4/5] border border-[#1a1a1a] bg-[#080808] flex flex-col items-center justify-center p-12 group hover:border-[#ffb74d] hover:-translate-y-4 transition-all duration-700 shadow-xl relative overflow-hidden">
-                    <div className="absolute top-0 left-0 w-full h-[2px] bg-[#ffb74d]/0 group-hover:bg-[#ffb74d]/100 transition-all"></div>
-                    <span className="text-7xl font-bold group-hover:text-[#ffb74d] transition-all duration-700 tracking-tight">{card.id}</span>
-                    <div className="mt-12 text-sm opacity-10 group-hover:opacity-100 transition-all tracking-[0.5em] uppercase font-bold">Inspect</div>
+                  <button key={card.id} onClick={() => { setCurrentCard(card); playVoice(card.audioUrl); }} 
+                    className="min-h-[300px] flex flex-col items-center justify-center border border-[#1a1a1a] bg-[#080808] p-8 group hover:border-[#ffb74d] transition-all">
+                    <span className="text-5xl md:text-6xl font-bold group-hover:text-[#ffb74d] transition-all break-words w-full text-center">{card.id}</span>
+                    <div className="mt-8 text-xs opacity-10 group-hover:opacity-100 tracking-[0.4em] font-bold uppercase">Inspect</div>
                   </button>
                 ))}
               </div>
@@ -304,17 +282,14 @@ export default function App() {
       <style jsx>{`
         :global(body) {
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang TC", "Microsoft JhengHei", sans-serif;
-          -webkit-font-smoothing: antialiased;
           background-color: #050505;
           margin: 0;
-          color: #c9b99a;
         }
-        .custom-scrollbar::-webkit-scrollbar { width: 8px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: #050505; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #1a1a1a; border-radius: 20px; border: 2px solid #050505; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #1a1a1a; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #ffb74d; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-        .animate-fadeIn { animation: fadeIn 1s cubic-bezier(0.23, 1, 0.32, 1) forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fadeIn { animation: fadeIn 0.6s ease-out forwards; }
       `}</style>
     </div>
   );
