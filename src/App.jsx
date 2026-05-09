@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Howl, Howler } from 'howler';
 import { db, storage } from './firebaseConfig'; 
-import { collection, getDocs, doc, getDoc, query, where, setDoc } from "firebase/firestore";
+import { collection, getDocs, doc, query, where, setDoc } from "firebase/firestore";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 
 const bgmOptions = [
@@ -14,7 +14,7 @@ export default function App() {
   const [activeBgm, setActiveBgm] = useState(bgmOptions[0]);
   const [bgmVolume, setBgmVolume] = useState(0); 
   const [isUnlocked, setIsUnlocked] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(false); 
+  const [isCollapsed, setIsCollapsed] = useState(true); // iPad 預設內縮以換取空間
   
   const bgmRef = useRef(null);
   const voiceRef = useRef(null);
@@ -24,21 +24,20 @@ export default function App() {
   
   const [scenarios, setScenarios] = useState([]); 
   const [availableDecks, setAvailableDecks] = useState([]); 
-  
   const [activeScenario, setActiveScenario] = useState('');
   const [activeDeckType, setActiveDeckType] = useState('');
   
   const [searchId, setSearchId] = useState('');
   const [currentCard, setCurrentCard] = useState(null);
-  const [cardList, setCardList] = useState([]);
+  const [fullCardList, setFullCardList] = useState([]); // 存放完整的分類清單
   
-  // 語音播放狀態控管
   const [isVoicePlaying, setIsVoicePlaying] = useState(false);
   const [isVoicePaused, setIsVoicePaused] = useState(false);
 
   const [uploadStatus, setUploadStatus] = useState('');
   const [uploadProgress, setUploadProgress] = useState(0);
 
+  // 初始化資料庫連線
   useEffect(() => {
     const initApp = async () => {
       try {
@@ -97,44 +96,50 @@ export default function App() {
     } catch (e) { console.error(e); }
   };
 
+  // 當分類改變時，讀取所有卡片
   useEffect(() => {
     if (activeScenario && activeDeckType) {
       const q = query(collection(db, "cards"), where("scenario", "==", activeScenario), where("deckType", "==", activeDeckType));
       getDocs(q).then(snap => {
         const items = [];
         snap.forEach(d => items.push(d.data()));
-        setCardList(items.sort((a, b) => a.id.localeCompare(b.id, undefined, {numeric: true})));
+        setFullCardList(items.sort((a, b) => a.id.localeCompare(b.id, undefined, {numeric: true})));
       });
     }
   }, [activeScenario, activeDeckType]);
 
+  // --- 即時過濾邏輯 ---
+  const filteredCardList = useMemo(() => {
+    if (!searchId) return fullCardList;
+    return fullCardList.filter(card => card.id.includes(searchId));
+  }, [searchId, fullCardList]);
+
+  const handleNumClick = (val) => {
+    setSearchId(prev => prev + val);
+  };
+
+  const clearSearch = () => setSearchId('');
+  const backspaceSearch = () => setSearchId(prev => prev.slice(0, -1));
+
+  // --- BGM 控制 ---
   const initBgm = () => {
     if (bgmRef.current) { bgmRef.current.stop(); bgmRef.current.unload(); }
     bgmRef.current = new Howl({ src: [activeBgm.src], loop: true, volume: bgmVolume, html5: true });
     bgmRef.current.play();
   };
-
   useEffect(() => { if (isUnlocked) initBgm(); }, [activeBgm, isUnlocked]);
   useEffect(() => { if (bgmRef.current) bgmRef.current.volume(bgmVolume); }, [bgmVolume]);
 
-  // --- 進階語音控制邏輯 ---
+  // --- 語音播放控制 ---
   const playVoice = (url) => {
     if (!isUnlocked || !url) return;
-    
-    // 如果是暫停中則恢復
     if (isVoicePaused && voiceRef.current) {
       voiceRef.current.play();
-      setIsVoicePaused(false);
-      setIsVoicePlaying(true);
       return;
     }
-
     if (voiceRef.current) voiceRef.current.unload();
-    
     voiceRef.current = new Howl({
-      src: [url],
-      html5: true,
-      format: ['mp3', 'wav'],
+      src: [url], html5: true, format: ['mp3', 'wav'],
       onplay: () => { setIsVoicePlaying(true); setIsVoicePaused(false); },
       onpause: () => { setIsVoicePlaying(false); setIsVoicePaused(true); },
       onend: () => { setIsVoicePlaying(false); setIsVoicePaused(false); },
@@ -142,18 +147,8 @@ export default function App() {
     });
     voiceRef.current.play();
   };
-
-  const pauseVoice = () => {
-    if (voiceRef.current && isVoicePlaying) {
-      voiceRef.current.pause();
-    }
-  };
-
-  const stopVoice = () => {
-    if (voiceRef.current) {
-      voiceRef.current.stop();
-    }
-  };
+  const pauseVoice = () => voiceRef.current?.pause();
+  const stopVoice = () => voiceRef.current?.stop();
 
   const handleFolderSelect = async (event) => {
     const files = event.target.files;
@@ -165,7 +160,7 @@ export default function App() {
       const cardId = file.name.split('.')[0].toUpperCase();
       const pathParts = file.webkitRelativePath.split('/');
       let scen = pathParts[pathParts.length - 3] || "未命名";
-      let deck = pathParts.length >= 2 ? pathParts[pathParts.length - 2] : "未分類";
+      let deck = pathParts[pathParts.length - 2] || "未分類";
       try {
         const storageRef = ref(storage, `audios/${scen}/${deck}/${file.name}`);
         await uploadBytesResumable(storageRef, file);
@@ -210,13 +205,13 @@ export default function App() {
           <div className="flex-1 overflow-y-auto px-4 custom-scrollbar">
             <p className="text-[10px] text-[#ffb74d] opacity-30 uppercase tracking-widest mb-4 font-bold text-center">劇本</p>
             {scenarios.map(s => (
-              <button key={s} onClick={() => { setActiveScenario(s); setIsCollapsed(true); }} className={`w-full p-4 mb-2 text-left text-lg border ${activeScenario === s ? 'bg-[#ffb74d] text-black border-[#ffb74d] font-bold' : 'border-[#1a1a1a] opacity-60'}`}>
+              <button key={s} onClick={() => setActiveScenario(s)} className={`w-full p-4 mb-2 text-left text-lg border ${activeScenario === s ? 'bg-[#ffb74d] text-black border-[#ffb74d] font-bold' : 'border-[#1a1a1a] opacity-60'}`}>
                 {isCollapsed ? s.charAt(0) : s}
               </button>
             ))}
             <p className="text-[10px] text-[#ffb74d] opacity-30 uppercase tracking-widest my-4 font-bold text-center">分類</p>
             {availableDecks.map(d => (
-              <button key={d} onClick={() => { setActiveDeckType(d); setIsCollapsed(true); }} className={`w-full p-4 mb-2 text-left text-sm border ${activeDeckType === d ? 'border-[#ffb74d] text-[#ffb74d] font-bold' : 'border-[#1a1a1a] opacity-40'}`}>
+              <button key={d} onClick={() => setActiveDeckType(d)} className={`w-full p-4 mb-2 text-left text-sm border ${activeDeckType === d ? 'border-[#ffb74d] text-[#ffb74d] font-bold' : 'border-[#1a1a1a] opacity-40'}`}>
                 {isCollapsed ? d.charAt(0) : d}
               </button>
             ))}
@@ -225,22 +220,28 @@ export default function App() {
 
         {/* 右側內容區 */}
         <div className="flex-1 flex flex-col overflow-hidden p-6 gap-6">
-          <div className="flex gap-4">
-            {/* 修改：使用 inputMode="numeric" 並優化寬度 */}
-            <input 
-              type="text" 
-              inputMode="numeric"
-              placeholder="檢索編號..." 
-              className="flex-1 p-5 bg-[#0a0a0a] border border-[#1a1a1a] text-2xl text-[#ffb74d] outline-none font-mono" 
-              value={searchId} 
-              onChange={(e) => setSearchId(e.target.value)} 
-            />
-            <button onClick={() => {
-              getDoc(doc(db, "cards", searchId.toUpperCase())).then(ds => {
-                if(ds.exists()) { setCurrentCard(ds.data()); stopVoice(); playVoice(ds.data().audioUrl); }
-                else alert("查無紀錄");
-              });
-            }} className="px-6 bg-[#ffb74d] text-black font-bold uppercase text-sm">搜尋</button>
+          
+          {/* 上方：數字鍵盤與檢索顯示 */}
+          <div className="flex-none flex flex-col gap-4 bg-[#0a0a0a] p-6 border border-[#1a1a1a]">
+            <div className="flex items-center gap-4">
+              <div className="flex-1 bg-black border border-[#ffb74d]/30 p-5 text-4xl font-mono text-[#ffb74d] tracking-widest min-h-[80px] flex items-center">
+                {searchId || <span className="opacity-10">Waiting...</span>}
+              </div>
+              <button onClick={backspaceSearch} className="px-8 py-5 bg-[#1a1a1a] text-[#ffb74d] text-2xl font-bold border border-[#ffb74d]/20 hover:bg-[#ffb74d] hover:text-black transition-all">←</button>
+              <button onClick={clearSearch} className="px-8 py-5 bg-[#1a1a1a] text-red-500 text-2xl font-bold border border-red-500/20 hover:bg-red-500 hover:text-black transition-all">CLEAR</button>
+            </div>
+            
+            <div className="grid grid-cols-10 gap-2">
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 0].map(num => (
+                <button 
+                  key={num} 
+                  onClick={() => handleNumClick(num.toString())}
+                  className="py-6 bg-[#080808] border border-[#1a1a1a] text-2xl font-bold hover:border-[#ffb74d] hover:text-[#ffb74d] transition-all active:scale-95"
+                >
+                  {num}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="flex-1 border border-[#1a1a1a] bg-[#050505] overflow-y-auto p-8 custom-scrollbar relative">
@@ -248,40 +249,44 @@ export default function App() {
               <div className="text-center p-10">
                 <input type="file" webkitdirectory="true" directory="true" multiple onChange={handleFolderSelect} />
                 <p className="text-[#ffb74d] mt-4">{uploadStatus} {uploadProgress}%</p>
-                <button onClick={() => setIsAdmin(false)} className="mt-10 opacity-40 underline">關閉管理模式</button>
+                <button onClick={() => setIsAdmin(false)} className="mt-10 opacity-40 underline font-bold">關閉管理模式</button>
               </div>
             ) : currentCard ? (
               <div className="h-full flex flex-col items-center justify-center animate-fadeIn">
-                <p className="opacity-30 tracking-[0.5em] mb-4 text-xs uppercase">{currentCard.scenario} / {currentCard.deckType}</p>
-                {/* 修改：縮小字體並確保排版 */}
-                <h2 className="text-6xl md:text-8xl font-bold text-[#ffb74d] mb-12 font-mono break-all text-center px-10">{currentCard.id}</h2>
+                <p className="opacity-30 tracking-[0.5em] mb-6 text-sm uppercase">{currentCard.scenario} / {currentCard.deckType}</p>
+                <h2 className="text-6xl md:text-9xl font-bold text-[#ffb74d] mb-16 font-mono tracking-tight text-center px-10">{currentCard.id}</h2>
                 
-                {/* 新增：播放控制器 */}
                 <div className="flex items-center gap-10">
-                  <button onClick={() => stopVoice()} className="w-16 h-16 rounded-full border border-[#ffb74d]/30 text-[#ffb74d] text-xl flex items-center justify-center hover:bg-red-900/20 transition-all">■</button>
-                  
+                  <button onClick={() => stopVoice()} className="w-20 h-20 rounded-full border border-[#ffb74d]/30 text-[#ffb74d] text-3xl flex items-center justify-center hover:bg-red-900/20 transition-all">■</button>
                   <button 
                     onClick={() => isVoicePlaying ? pauseVoice() : playVoice(currentCard.audioUrl)} 
-                    className={`w-32 h-32 rounded-full border-4 flex items-center justify-center text-5xl transition-all ${isVoicePlaying ? 'border-[#ffb74d] bg-[#ffb74d]/10 animate-pulse' : 'border-[#c9b99a]/10'}`}
+                    className={`w-40 h-40 rounded-full border-4 flex items-center justify-center text-7xl transition-all ${isVoicePlaying ? 'border-[#ffb74d] bg-[#ffb74d]/10 animate-pulse' : 'border-[#c9b99a]/10'}`}
                   >
                     {isVoicePlaying ? '||' : '▶'}
                   </button>
-                  
-                  <button onClick={() => { stopVoice(); playVoice(currentCard.audioUrl); }} className="w-16 h-16 rounded-full border border-[#ffb74d]/30 text-[#ffb74d] text-xl flex items-center justify-center hover:bg-[#ffb74d]/10 transition-all">↻</button>
+                  <button onClick={() => { stopVoice(); playVoice(currentCard.audioUrl); }} className="w-20 h-20 rounded-full border border-[#ffb74d]/30 text-[#ffb74d] text-3xl flex items-center justify-center hover:bg-[#ffb74d]/10 transition-all">↻</button>
                 </div>
 
-                <button onClick={() => { stopVoice(); setCurrentCard(null); }} className="mt-12 opacity-30 uppercase tracking-[0.4em] text-[10px] hover:opacity-100 transition-opacity">關閉檔案回列表</button>
+                <button onClick={() => { stopVoice(); setCurrentCard(null); }} className="mt-16 opacity-30 uppercase tracking-[0.6em] text-xs hover:opacity-100 transition-opacity font-bold">DISMISS ARCHIVE</button>
               </div>
             ) : (
               <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {cardList.map(card => (
-                  <button key={card.id} onClick={() => { setCurrentCard(card); stopVoice(); playVoice(card.audioUrl); }} className="min-h-[200px] flex flex-col items-start justify-center border border-[#1a1a1a] bg-[#0a0a0a] hover:border-[#ffb74d] transition-all p-8 relative overflow-hidden group">
-                    <div className="absolute top-0 left-0 w-1 h-full bg-[#ffb74d] opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                    {/* 修改：靠左排版，font-mono 確保數字對齊 */}
-                    <span className="text-3xl font-bold mb-4 font-mono text-left w-full break-words">{card.id}</span>
-                    <span className="text-[10px] opacity-20 font-bold uppercase tracking-widest">Open Archive</span>
+                {filteredCardList.map(card => (
+                  <button 
+                    key={card.id} 
+                    onClick={() => { setCurrentCard(card); stopVoice(); playVoice(card.audioUrl); }} 
+                    className="min-h-[180px] flex flex-col items-start justify-center border border-[#1a1a1a] bg-[#0a0a0a] hover:border-[#ffb74d] transition-all p-10 relative overflow-hidden group shadow-lg"
+                  >
+                    <div className="absolute top-0 left-0 w-1.5 h-full bg-[#ffb74d] opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                    <span className="text-3xl font-bold mb-4 font-mono text-left leading-tight">{card.id}</span>
+                    <span className="text-[10px] opacity-20 font-bold uppercase tracking-widest group-hover:opacity-100 transition-opacity">Open Archive</span>
                   </button>
                 ))}
+                {filteredCardList.length === 0 && (
+                  <div className="col-span-full h-full flex items-center justify-center opacity-10">
+                    <p className="text-4xl font-bold tracking-[1em]">NO MATCH FOUND</p>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -289,12 +294,11 @@ export default function App() {
       </main>
 
       <style jsx>{`
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #1a1a1a; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .animate-fadeIn { animation: fadeIn 0.4s ease-out; }
-        /* 隱藏數字輸入框的上下箭頭 */
-        input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #ffb74d; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fadeIn { animation: fadeIn 0.4s cubic-bezier(0.23, 1, 0.32, 1) forwards; }
       `}</style>
     </div>
   );
