@@ -16,7 +16,7 @@ export default function App() {
   const [theme, setTheme] = useState('theme-relic');
   const [activeBgm, setActiveBgm] = useState(bgmOptions[0]);
   const [bgmVolume, setBgmVolume] = useState(0.2);
-  const [isUnlocked, setIsUnlocked] = useState(false); // 追蹤音訊是否已解鎖
+  const [isUnlocked, setIsUnlocked] = useState(false);
   
   const bgmRef = useRef(null);
   const voiceRef = useRef(null);
@@ -33,7 +33,6 @@ export default function App() {
   const [isSearching, setIsSearching] = useState(false);
   const [isVoicePlaying, setIsVoicePlaying] = useState(false);
 
-  // 初始化與解鎖
   useEffect(() => {
     const initApp = async () => {
       try {
@@ -73,10 +72,8 @@ export default function App() {
     } finally { setIsSearching(false); }
   };
 
-  // 手動啟動儀式：解鎖瀏覽器音訊限制
   const startRitual = () => {
     setIsUnlocked(true);
-    // 初始化 BGM
     initBgm();
   };
 
@@ -107,10 +104,9 @@ export default function App() {
     if (bgmRef.current) bgmRef.current.volume(bgmVolume);
   }, [bgmVolume]);
 
-  // 語音播放
   const playVoice = (url) => {
     if (!isUnlocked) {
-      alert("請先點擊『啟動檔案庫儀式』以解除音訊禁制。");
+      alert("請先啟動儀式。");
       return;
     }
 
@@ -120,16 +116,20 @@ export default function App() {
     }
 
     setIsVoicePlaying(true);
+    
+    // 💡 關鍵修正：在 URL 後面加上時間戳記以避開瀏覽器 CORS 快取
+    const cacheBusterUrl = `${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`;
+
     voiceRef.current = new Howl({
-      src: [url],
-      html5: true,
+      src: [cacheBusterUrl],
+      html5: true, // 對於雲端大檔案，HTML5 模式較穩定
       format: ['mp3', 'wav', 'm4a', 'aac'],
       onend: () => setIsVoicePlaying(false),
       onstop: () => setIsVoicePlaying(false),
       onloaderror: (id, msg) => { 
         console.error("載入失敗", msg); 
         setIsVoicePlaying(false);
-        alert("音訊檔案載入失敗，可能受到 CORS 限制或網路不穩。");
+        alert("音訊檔案載入失敗。請確認是否已執行 CORS 指令，或試著重新整理網頁。");
       },
       onplayerror: (id, msg) => {
         voiceRef.current.once('unlock', () => voiceRef.current.play());
@@ -140,16 +140,11 @@ export default function App() {
 
   return (
     <div className={`w-screen h-screen flex flex-col ${theme} overflow-hidden font-sans`}>
-      
       {!isUnlocked && (
         <div className="fixed inset-0 z-[100] bg-black bg-opacity-90 flex flex-col items-center justify-center">
           <div className="p-10 border-2 border-[var(--text-highlight)] text-center max-w-sm">
-            <h1 className="text-3xl font-bold text-[var(--text-highlight)] mb-6 tracking-tighter">檢索終端已就緒</h1>
-            <p className="text-sm opacity-60 mb-8 leading-relaxed">偵測到音訊環境受阻，請點擊下方按鈕以啟動檔案庫連結儀式，解鎖語音導覽與背景音軌。</p>
-            <button 
-              onClick={startRitual}
-              className="px-10 py-4 bg-[var(--text-highlight)] text-black font-bold hover:scale-105 transition-transform"
-            >
+            <h1 className="text-3xl font-bold text-[var(--text-highlight)] mb-6">檢索終端已就緒</h1>
+            <button onClick={startRitual} className="px-10 py-4 bg-[var(--text-highlight)] text-black font-bold hover:scale-105 transition-transform">
               啟動檔案庫儀式
             </button>
           </div>
@@ -162,16 +157,11 @@ export default function App() {
         }}>
           👁️ 禁忌檔案庫 {isAdmin && " [管理模式]"}
         </div>
-        
         <div className="flex items-center space-x-4">
           <span className="text-[10px] opacity-40">{dbStatus}</span>
-          <div className="flex items-center space-x-2 bg-[var(--bg-primary)] px-3 py-1 border border-[var(--border-color)]">
-            <span className="text-xs">BGM</span>
-            <select 
-              className="bg-transparent text-xs outline-none" 
-              value={activeBgm.id} 
-              onChange={(e) => setActiveBgm(bgmOptions.find(b => b.id === e.target.value))}
-            >
+          <div className="flex items-center space-x-2 bg-[var(--bg-primary)] px-3 py-1 border border-[var(--border-color)] text-xs">
+            <span>BGM</span>
+            <select className="bg-transparent outline-none" value={activeBgm.id} onChange={(e) => setActiveBgm(bgmOptions.find(b => b.id === e.target.value))}>
               {bgmOptions.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
             <input type="range" min="0" max="1" step="0.1" value={bgmVolume} onChange={(e) => setBgmVolume(parseFloat(e.target.value))} className="w-12 h-1" />
@@ -182,7 +172,7 @@ export default function App() {
       <main className="flex-1 flex p-6 gap-6 overflow-hidden">
         <div className="w-56 flex flex-col gap-6 border-r border-[var(--border-color)] pr-4 overflow-y-auto">
           <section>
-            <p className="text-[var(--text-highlight)] text-[10px] mb-3 opacity-50 tracking-widest uppercase">Scenario</p>
+            <p className="text-[var(--text-highlight)] text-[10px] mb-3 opacity-50 uppercase">Scenario</p>
             <div className="flex flex-col gap-2">
               {scenarios.map(s => (
                 <button key={s} onClick={() => setActiveScenario(s)} className={`p-3 text-xs text-left border transition ${activeScenario === s ? 'bg-[var(--text-highlight)] text-black border-[var(--text-highlight)] font-bold' : 'border-[var(--border-color)] opacity-60'}`}>
@@ -192,7 +182,7 @@ export default function App() {
             </div>
           </section>
           <section>
-            <p className="text-[var(--text-highlight)] text-[10px] mb-3 opacity-50 tracking-widest uppercase">Deck</p>
+            <p className="text-[var(--text-highlight)] text-[10px] mb-3 opacity-50 uppercase">Deck</p>
             <div className="flex flex-col gap-2">
               {['核心卡牌', '討論牌組', '調查牌組'].map(d => (
                 <button key={d} onClick={() => setActiveDeckType(d)} className={`p-3 text-[10px] text-left border transition ${activeDeckType === d ? 'border-[var(--text-highlight)] text-[var(--text-highlight)]' : 'border-[var(--border-color)] opacity-40'}`}>
@@ -204,29 +194,31 @@ export default function App() {
         </div>
 
         <div className="flex-1 flex flex-col gap-4 overflow-hidden">
-          <form onSubmit={(e) => { e.preventDefault(); handleSearch(); }} className="flex gap-2">
+          <form onSubmit={(e) => { e.preventDefault(); const id = searchId.trim().toUpperCase(); if (id) { setSearchId(id); fetchFilteredCards(); } }} className="flex gap-2">
             <input 
               type="text" placeholder="輸入編號..." 
               className="flex-1 p-4 bg-[var(--bg-panel)] border border-[var(--border-color)] text-xl outline-none"
               value={searchId} onChange={(e) => setSearchId(e.target.value)}
             />
-            <button type="submit" className="px-8 bg-[var(--text-highlight)] text-black font-bold uppercase">Search</button>
+            <button type="button" onClick={() => { const id = searchId.trim().toUpperCase(); if(id) {
+               getDoc(doc(db, "cards", id)).then(ds => { if(ds.exists()) { setCurrentCard(ds.data()); playVoice(ds.data().audioUrl); } else alert("查無編號"); });
+            } }} className="px-8 bg-[var(--text-highlight)] text-black font-bold uppercase">Search</button>
           </form>
 
           <div className="flex-1 border border-[var(--border-color)] p-8 flex flex-col items-center justify-center relative bg-[var(--bg-panel)] bg-opacity-20 overflow-y-auto">
             {isSearching ? (
-              <div className="text-center animate-pulse">讀取中...</div>
+              <div className="animate-pulse">讀取中...</div>
             ) : currentCard ? (
-              <div className="text-center w-full">
+              <div className="text-center w-full animate-fadeIn">
                 <span className="text-[var(--text-highlight)] text-[10px] tracking-widest uppercase opacity-60">{currentCard.scenario} / {currentCard.deckType}</span>
                 <h2 className="text-[12rem] font-black leading-none my-8 tracking-tighter">{currentCard.id}</h2>
                 <button 
                   onClick={() => playVoice(currentCard.audioUrl)}
-                  className={`w-32 h-32 rounded-full border-2 flex items-center justify-center text-5xl transition-all ${isVoicePlaying ? 'border-[var(--text-highlight)] text-[var(--text-highlight)] animate-pulse' : 'border-[var(--text-primary)]'}`}
+                  className={`w-32 h-32 rounded-full border-2 flex items-center justify-center text-5xl transition-all ${isVoicePlaying ? 'border-[var(--text-highlight)] text-[var(--text-highlight)] animate-pulse shadow-[0_0_20px_var(--text-highlight)]' : 'border-[var(--text-primary)]'}`}
                 >
                   {isVoicePlaying ? '⏳' : '▶'}
                 </button>
-                <button onClick={() => setCurrentCard(null)} className="block mt-10 text-[10px] opacity-30 hover:underline mx-auto">DISMISS</button>
+                <button onClick={() => setCurrentCard(null)} className="block mt-10 text-[10px] opacity-30 hover:underline mx-auto uppercase tracking-widest">Dismiss</button>
               </div>
             ) : (
               <div className="w-full h-full">
