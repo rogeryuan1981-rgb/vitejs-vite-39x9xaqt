@@ -215,7 +215,7 @@ export default function App() {
 
       <header className="flex justify-between items-center p-4 border-b border-[#333] bg-[#1a1a1a] z-20">
         <div className="text-xl font-bold text-[#ffb74d] cursor-pointer tracking-tighter" onClick={() => {
-          const p = prompt("請輸入密語："); if (p === 'phnglui') setIsAdmin(!isAdmin);
+          const p = prompt("請輸入密語："); if (p === '0943') setIsAdmin(!isAdmin);
         }}>👁️ 禁忌檔案庫 {isAdmin && <span className="text-[10px] ml-2 text-red-500">[管理模式]</span>}</div>
         <div className="flex items-center space-x-4">
           <div className="flex items-center space-x-2 bg-[#000] px-3 py-1 border border-[#333] text-[10px]">
