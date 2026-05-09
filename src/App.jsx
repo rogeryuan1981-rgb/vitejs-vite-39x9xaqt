@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Howl } from 'howler';
+import { db } from './firebaseConfig'; 
+import { collection, getDocs } from "firebase/firestore";
 
 const bgmOptions = [
   { id: 'bgm1', name: '音軌 I：無名之霧', src: 'https://cdn.pixabay.com/download/audio/2022/10/25/audio_510b642674.mp3' }, // 暫時代用音源
@@ -18,6 +20,24 @@ export default function App() {
   // 管理員權限相關
   const [clickCount, setClickCount] = useState(0);
   const [isAdmin, setIsAdmin] = useState(false);
+
+  // Firebase 連線狀態
+  const [dbStatus, setDbStatus] = useState('連線測試中...');
+
+  // 測試 Firebase 連線
+  useEffect(() => {
+    const testConnection = async () => {
+      try {
+        // 嘗試向資料庫發起一個簡單的讀取請求
+        const querySnapshot = await getDocs(collection(db, "system_check"));
+        setDbStatus('連線成功 (終端已連線)');
+      } catch (error) {
+        console.error("Firebase 連線失敗：", error);
+        setDbStatus('連線失敗 (迷失於虛空)');
+      }
+    };
+    testConnection();
+  }, []);
 
   // 處理背景音樂播放與切換
   useEffect(() => {
@@ -81,6 +101,11 @@ export default function App() {
         {/* 右側：自訂控制區 */}
         <div className="flex items-center space-x-6">
           
+          {/* 資料庫狀態 */}
+          <div className="text-sm text-[var(--text-highlight)] opacity-80">
+            狀態：{dbStatus}
+          </div>
+
           {/* BGM 控制 */}
           <div className="flex items-center space-x-2">
             <span className="text-sm">🎵</span>
