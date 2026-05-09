@@ -3,7 +3,7 @@ import { db } from './firebaseConfig';
 import { collection, getDocs, doc, getDoc, query, where } from "firebase/firestore";
 
 const bgmOptions = [
-  { id: 'bgm1', name: '音軌 I：無名之霧', src: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' }, // 換成極度穩定的測試源
+  { id: 'bgm1', name: '音軌 I：無名之霧', src: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' },
   { id: 'bgm2', name: '音軌 II：深海脈動', src: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3' },
   { id: 'bgm3', name: '音軌 III：遠古耳語', src: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3' },
 ];
@@ -28,6 +28,7 @@ export default function App() {
   const [isSearching, setIsSearching] = useState(false);
   const [isVoicePlaying, setIsVoicePlaying] = useState(false);
 
+  // 初始化
   useEffect(() => {
     const initApp = async () => {
       try {
@@ -89,21 +90,28 @@ export default function App() {
   }, [bgmVolume]);
 
   const playVoice = (url) => {
-    if (!isUnlocked) return;
+    if (!isUnlocked || !url) return;
+    
+    // 停止正在播放的語音並清理
     voiceAudio.current.pause();
+    voiceAudio.current.removeAttribute('src'); 
+    voiceAudio.current.load();
+
     setIsVoicePlaying(true);
     
-    // 強制跨域屬性並加上 Cache Buster
-    voiceAudio.current.crossOrigin = "anonymous";
+    // 💡 加上時間戳記強迫繞過快取
     const finalUrl = `${url}${url.includes('?') ? '&' : '?'}cb=${Date.now()}`;
+    
+    voiceAudio.current.crossOrigin = "anonymous";
     voiceAudio.current.src = finalUrl;
     
     voiceAudio.current.play()
-      .then(() => console.log("播放成功"))
+      .then(() => console.log("播放器成功啟動"))
       .catch(e => {
-        console.error("播放失敗:", e);
+        console.error("播放攔截詳細原因:", e);
         setIsVoicePlaying(false);
-        alert("音訊連結失敗。請確認：\n1. Firebase Rules 是否已發佈為 allow read: if true\n2. 是否已執行 gsutil cors 指令");
+        // 如果還是報錯，通常就是規則尚未生效或路徑錯誤
+        alert("音訊連結受阻。這通常是 Firebase 規則同步中，或上傳路徑包含特殊字元。建議 2 分鐘後再試。");
       });
 
     voiceAudio.current.onended = () => setIsVoicePlaying(false);
@@ -140,9 +148,10 @@ export default function App() {
       </header>
 
       <main className="flex-1 flex p-6 gap-6 overflow-hidden">
+        {/* 左側：劇本與分類 */}
         <div className="w-56 flex flex-col gap-6 border-r border-[var(--border-color)] pr-4 overflow-y-auto">
           <section>
-            <p className="text-[var(--text-highlight)] text-[10px] mb-3 opacity-50 uppercase tracking-widest">Scenario</p>
+            <p className="text-[var(--text-highlight)] text-[10px] mb-3 opacity-50 uppercase tracking-widest text-center">Scenario</p>
             <div className="flex flex-col gap-2">
               {scenarios.map(s => (
                 <button key={s} onClick={() => setActiveScenario(s)} className={`p-3 text-[11px] text-left border transition ${activeScenario === s ? 'bg-[var(--text-highlight)] text-black border-[var(--text-highlight)] font-bold' : 'border-[var(--border-color)] opacity-60'}`}>
@@ -152,7 +161,7 @@ export default function App() {
             </div>
           </section>
           <section>
-            <p className="text-[var(--text-highlight)] text-[10px] mb-3 opacity-50 uppercase tracking-widest">Deck</p>
+            <p className="text-[var(--text-highlight)] text-[10px] mb-3 opacity-50 uppercase tracking-widest text-center">Deck</p>
             <div className="flex flex-col gap-2">
               {['核心卡牌', '討論牌組', '調查牌組'].map(d => (
                 <button key={d} onClick={() => setActiveDeckType(d)} className={`p-3 text-[11px] text-left border transition ${activeDeckType === d ? 'border-[var(--text-highlight)] text-[var(--text-highlight)]' : 'border-[var(--border-color)] opacity-40'}`}>
@@ -163,34 +172,36 @@ export default function App() {
           </section>
         </div>
 
+        {/* 右側：搜尋與列表 */}
         <div className="flex-1 flex flex-col gap-4 overflow-hidden">
-          <div className="flex gap-2">
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            const id = searchId.trim().toUpperCase();
+            if(id) {
+              getDoc(doc(db, "cards", id)).then(ds => {
+                if(ds.exists()) { setCurrentCard(ds.data()); playVoice(ds.data().audioUrl); }
+                else alert("此編號尚未編錄。");
+              });
+            }
+          }} className="flex gap-2">
             <input 
-              type="text" placeholder="輸入編號..." 
+              type="text" placeholder="編號輸入 (例如: 72B)..." 
               className="flex-1 p-4 bg-[var(--bg-panel)] border border-[var(--border-color)] text-xl outline-none"
               value={searchId} onChange={(e) => setSearchId(e.target.value)}
             />
-            <button onClick={() => {
-              const id = searchId.trim().toUpperCase();
-              if(id) {
-                getDoc(doc(db, "cards", id)).then(ds => {
-                  if(ds.exists()) { setCurrentCard(ds.data()); playVoice(ds.data().audioUrl); }
-                  else alert("檢索編號不存在");
-                });
-              }
-            }} className="px-8 bg-[var(--text-highlight)] text-black font-bold uppercase">Seek</button>
-          </div>
+            <button type="submit" className="px-8 bg-[var(--text-highlight)] text-black font-bold uppercase">Seek</button>
+          </form>
 
           <div className="flex-1 border border-[var(--border-color)] p-8 flex flex-col items-center justify-center relative bg-[var(--bg-panel)] bg-opacity-20 overflow-y-auto">
             {isSearching ? (
-              <div className="animate-pulse">正在讀取...</div>
+              <div className="animate-pulse">正在穿過無名之霧...</div>
             ) : currentCard ? (
               <div className="text-center w-full animate-fadeIn">
                 <span className="text-[var(--text-highlight)] text-[10px] tracking-widest uppercase opacity-40">{currentCard.scenario} / {currentCard.deckType}</span>
                 <h2 className="text-[10rem] font-black leading-none my-8 tracking-tighter">{currentCard.id}</h2>
                 <button 
                   onClick={() => playVoice(currentCard.audioUrl)}
-                  className={`w-32 h-32 rounded-full border-2 flex items-center justify-center text-5xl transition-all ${isVoicePlaying ? 'border-[var(--text-highlight)] text-[var(--text-highlight)] animate-pulse' : 'border-[var(--text-primary)]'}`}
+                  className={`w-32 h-32 rounded-full border-2 flex items-center justify-center text-5xl transition-all ${isVoicePlaying ? 'border-[var(--text-highlight)] text-[var(--text-highlight)] animate-pulse' : 'border-[var(--text-primary)] hover:border-[var(--text-highlight)]'}`}
                 >
                   {isVoicePlaying ? '🔊' : '▶'}
                 </button>
@@ -208,6 +219,7 @@ export default function App() {
                       {card.id}
                     </button>
                   ))}
+                  {cardList.length === 0 && <p className="col-span-full text-center py-20 opacity-20 italic">目前分類下查無檔案</p>}
                 </div>
               </div>
             )}
