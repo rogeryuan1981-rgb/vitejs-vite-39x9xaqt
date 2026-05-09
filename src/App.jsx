@@ -22,7 +22,7 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [dbStatus, setDbStatus] = useState('連線中...');
   
-  // 核心邏輯：劇本與連動的 Deck 分類
+  // 核心邏輯：劇本與連動的分類
   const [scenarios, setScenarios] = useState([]); 
   const [availableDecks, setAvailableDecks] = useState([]); 
   
@@ -39,7 +39,7 @@ export default function App() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [currentUploadingFile, setCurrentUploadingFile] = useState('');
 
-  // 1. 初始讀取：只抓劇本清單
+  // 1. 初始讀取：抓取劇本清單
   useEffect(() => {
     const initApp = async () => {
       try {
@@ -67,7 +67,7 @@ export default function App() {
     } catch (e) { console.error(e); }
   };
 
-  // 2. 關鍵連動：當劇本改變時，動態查詢「該劇本有的資料夾」
+  // 2. 劇本連動分類：點擊劇本後，只抓取該劇本有的資料夾名稱
   useEffect(() => {
     if (activeScenario) {
       fetchDecksForScenario(activeScenario);
@@ -86,7 +86,6 @@ export default function App() {
       const dList = Array.from(deckSet).sort();
       setAvailableDecks(dList);
       
-      // 自動切換到該劇本的第一個分類
       if (dList.length > 0) {
         setActiveDeckType(dList[0]);
       } else {
@@ -95,7 +94,7 @@ export default function App() {
     } catch (e) { console.error(e); }
   };
 
-  // 3. 當劇本或分類改變時，刷新卡牌列表
+  // 3. 刷新列表
   useEffect(() => {
     if (activeScenario && activeDeckType) {
       fetchFilteredCards();
@@ -127,10 +126,6 @@ export default function App() {
     if (isUnlocked) initBgm();
   }, [activeBgm, isUnlocked]);
 
-  useEffect(() => {
-    if (bgmRef.current) bgmRef.current.volume(bgmVolume);
-  }, [bgmVolume]);
-
   const startRitual = () => {
     setIsUnlocked(true);
     Howler.unload();
@@ -156,7 +151,7 @@ export default function App() {
     const files = event.target.files;
     if (!files || files.length === 0) return;
     
-    setUploadStatus('INITIALIZING');
+    setUploadStatus('正在初始化');
     let uploadedCount = 0;
     const audioFiles = Array.from(files).filter(f => f.type.startsWith('audio/'));
     const totalFiles = audioFiles.length;
@@ -168,7 +163,7 @@ export default function App() {
       let deck = pathParts.length >= 2 ? pathParts[pathParts.length - 2] : "未分類牌組";
 
       setCurrentUploadingFile(cardId);
-      setUploadStatus(`UPLOADING`);
+      setUploadStatus(`同步檔案中`);
 
       try {
         const storageRef = ref(storage, `audios/${scen}/${deck}/${file.name}`);
@@ -182,11 +177,11 @@ export default function App() {
         uploadedCount++;
         setUploadProgress(Math.round((uploadedCount / totalFiles) * 100));
       } catch (error) { 
-        console.error("上傳中斷:", error);
+        console.error("上傳失敗:", error);
       }
     }
 
-    setUploadStatus("COMPLETED");
+    setUploadStatus("奉獻完成");
     setCurrentUploadingFile('');
     await fetchScenarios();
     if (activeScenario) await fetchDecksForScenario(activeScenario);
@@ -198,15 +193,15 @@ export default function App() {
       {!isUnlocked && (
         <div className="fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center p-6 text-center">
           <button onClick={startRitual} className="px-12 py-5 border-2 border-[#ffb74d] text-[#ffb74d] font-bold hover:bg-[#ffb74d] hover:text-black transition-all tracking-[0.3em]">
-            INITIATE LINK
+            啟動檢索終端
           </button>
         </div>
       )}
 
       <header className="flex justify-between items-center p-4 border-b border-[#333] bg-[#1a1a1a] z-20">
         <div className="text-xl font-bold text-[#ffb74d] cursor-pointer tracking-tighter" onClick={() => {
-          const p = prompt("密碼："); if (p === 'phnglui') setIsAdmin(!isAdmin);
-        }}>👁️ ARCHIVE TERMINAL {isAdmin && <span className="text-[10px] ml-2 text-red-500">[ADMIN]</span>}</div>
+          const p = prompt("請輸入密語："); if (p === 'phnglui') setIsAdmin(!isAdmin);
+        }}>👁️ 禁忌檔案庫 {isAdmin && <span className="text-[10px] ml-2 text-red-500">[管理模式]</span>}</div>
         <div className="flex items-center space-x-4">
           <div className="flex items-center space-x-2 bg-[#000] px-3 py-1 border border-[#333] text-[10px]">
             <span className="opacity-40">BGM</span>
@@ -219,10 +214,10 @@ export default function App() {
       </header>
 
       <main className="flex-1 flex p-6 gap-6 overflow-hidden">
-        {/* 左側選單：嚴格連動結構 */}
+        {/* 左側選單：分類連動 */}
         <div className="w-56 flex flex-col gap-6 border-r border-[#333] pr-4 overflow-y-auto">
           <section>
-            <p className="text-[#ffb74d] text-[10px] mb-3 opacity-30 uppercase tracking-[0.2em] text-center">Scenario</p>
+            <p className="text-[#ffb74d] text-[10px] mb-3 opacity-30 uppercase tracking-[0.2em] text-center">劇本 (Scenario)</p>
             <div className="flex flex-col gap-2">
               {scenarios.map(s => (
                 <button key={s} onClick={() => {setActiveScenario(s); setIsAdmin(false);}} className={`p-3 text-[11px] text-left border transition-all ${activeScenario === s ? 'bg-[#ffb74d] text-black border-[#ffb74d] font-bold shadow-[0_0_10px_rgba(255,183,77,0.3)]' : 'border-[#333] opacity-60 hover:opacity-100'}`}>{s}</button>
@@ -231,28 +226,28 @@ export default function App() {
           </section>
           
           <section>
-            <p className="text-[#ffb74d] text-[10px] mb-3 opacity-30 uppercase tracking-[0.2em] text-center">Available Decks</p>
+            <p className="text-[#ffb74d] text-[10px] mb-3 opacity-30 uppercase tracking-[0.2em] text-center">可選分類 (Decks)</p>
             <div className="flex flex-col gap-2">
               {availableDecks.map(d => (
                 <button key={d} onClick={() => {setActiveDeckType(d); setIsAdmin(false);}} className={`p-3 text-[11px] text-left border transition-all ${activeDeckType === d ? 'border-[#ffb74d] text-[#ffb74d] bg-[#ffb74d]/5' : 'border-[#333] opacity-40 hover:opacity-100'}`}>{d}</button>
               ))}
-              {availableDecks.length === 0 && <p className="text-[10px] text-center opacity-20 italic">No Decks Found</p>}
+              {availableDecks.length === 0 && <p className="text-[10px] text-center opacity-20 italic">無分類資料</p>}
             </div>
           </section>
         </div>
 
         <div className="flex-1 flex flex-col gap-4 overflow-hidden">
           <div className="flex gap-2">
-            <input type="text" placeholder="SEARCH ID..." className="flex-1 p-4 bg-[#1a1a1a] border border-[#333] text-xl outline-none focus:border-[#ffb74d] transition-colors font-mono" value={searchId} onChange={(e) => setSearchId(e.target.value)} />
+            <input type="text" placeholder="輸入編號檢索..." className="flex-1 p-4 bg-[#1a1a1a] border border-[#333] text-xl outline-none focus:border-[#ffb74d] transition-colors" value={searchId} onChange={(e) => setSearchId(e.target.value)} />
             <button onClick={() => {
               const id = searchId.trim().toUpperCase();
               if(id) {
                 getDoc(doc(db, "cards", id)).then(ds => {
                   if(ds.exists()) { setIsAdmin(false); setCurrentCard(ds.data()); playVoice(ds.data().audioUrl); }
-                  else alert("RECORD NOT FOUND");
+                  else alert("查無編號紀錄");
                 });
               }
-            }} className="px-8 bg-[#ffb74d] text-black font-bold uppercase hover:bg-[#ffa726]">Seek</button>
+            }} className="px-8 bg-[#ffb74d] text-black font-bold uppercase hover:bg-[#ffa726]">檢索</button>
           </div>
 
           <div className="flex-1 border border-[#333] p-8 flex flex-col items-center justify-center relative bg-[#1a1a1a] bg-opacity-40 overflow-y-auto">
@@ -262,8 +257,8 @@ export default function App() {
                   <input type="file" webkitdirectory="true" directory="true" multiple onChange={handleFolderSelect} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
                   <div className="flex flex-col items-center gap-4">
                     <span className="text-6xl text-[#ffb74d] animate-pulse">📁</span>
-                    <p className="text-xl font-bold tracking-widest">{uploadStatus || "OFFER DIRECTORY"}</p>
-                    {currentUploadingFile && <p className="text-xs font-mono text-[#ffb74d]">SYNCING: {currentUploadingFile}</p>}
+                    <p className="text-xl font-bold tracking-widest">{uploadStatus || "請選擇劇本資料夾"}</p>
+                    {currentUploadingFile && <p className="text-xs font-mono text-[#ffb74d]">同步中: {currentUploadingFile}</p>}
                   </div>
                   {uploadProgress > 0 && (
                     <div className="absolute bottom-0 left-0 w-full h-2 bg-[#222]">
@@ -280,7 +275,7 @@ export default function App() {
                 <button onClick={() => playVoice(currentCard.audioUrl)} className={`w-32 h-32 rounded-full border-2 flex items-center justify-center text-5xl transition-all shadow-lg ${isVoicePlaying ? 'border-[#ffb74d] text-[#ffb74d] animate-pulse shadow-[#ffb74d]/20' : 'border-[#e0e0e0] hover:border-[#ffb74d] hover:text-[#ffb74d]'}`}>
                   {isVoicePlaying ? '🔊' : '▶'}
                 </button>
-                <button onClick={() => { if(voiceRef.current) voiceRef.current.unload(); setCurrentCard(null); }} className="block mt-10 text-[10px] opacity-30 hover:opacity-100 hover:underline mx-auto tracking-widest">DISMISS ARCHIVE</button>
+                <button onClick={() => { if(voiceRef.current) voiceRef.current.unload(); setCurrentCard(null); }} className="block mt-10 text-[10px] opacity-30 hover:opacity-100 hover:underline mx-auto tracking-widest">返回列表</button>
               </div>
             ) : (
               <div className="w-full h-full">
