@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 基礎設定 */
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  transition: all 0.5s ease-in-out;
+}
+
+/* 1. 【深淵遺物】 (The Relic) */
+.theme-relic {
+  --bg-primary: #1A1612;
+  --bg-panel: #2A241E;
+  --text-primary: #D4C4A8;
+  --text-highlight: #8B0000;
+  --border-color: #3E352A;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'Times New Roman', serif;
+}
+
+/* 2. 【瘋狂視界】 (Insanity Vision) */
+.theme-insanity {
+  --bg-primary: #050A05;
+  --bg-panel: #0A140A;
+  --text-primary: #8BA888;
+  --text-highlight: #00FF00;
+  --border-color: #1A331A;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'Courier New', Courier, monospace;
+}
+
+/* 3. 【禁忌調查】 (Forbidden Archive) */
+.theme-archive {
+  --bg-primary: #111111;
+  --bg-panel: #222222;
+  --text-primary: #E0E0E0;
+  --text-highlight: #FFFFFF;
+  --border-color: #444444;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'Courier New', Courier, monospace;
+  filter: grayscale(100%) sepia(20%);
+}
