@@ -37,7 +37,7 @@ export default function App() {
   const [uploadStatus, setUploadStatus] = useState('');
   const [uploadProgress, setUploadProgress] = useState(0);
 
-  // 初始化資料庫
+  // 初始化資料庫清單
   useEffect(() => {
     const initApp = async () => {
       try {
@@ -112,27 +112,32 @@ export default function App() {
     return fullCardList.filter(card => card.id.includes(searchId));
   }, [searchId, fullCardList]);
 
-  // --- BGM 控制邏輯 ---
+  // --- BGM 邏輯：最大限制 0.3 ---
   const initBgm = () => {
     if (bgmRef.current) { bgmRef.current.stop(); bgmRef.current.unload(); }
     bgmRef.current = new Howl({ 
-      src: [activeBgm.src], loop: true, volume: bgmVolume, html5: true, preload: true
+      src: [activeBgm.src], 
+      loop: true, 
+      volume: bgmVolume * 0.3, // 預設限縮至 30%
+      html5: true, 
+      preload: true
     });
     bgmRef.current.play();
   };
 
   useEffect(() => { if (isUnlocked) initBgm(); }, [activeBgm, isUnlocked]);
 
-  // 同步 BGM 音量，若語音正在播放，則主動降噪
+  // 音量連動修正，保持 30% 上限並支援播放避讓
   useEffect(() => {
     if (bgmRef.current) {
-      const targetVolume = isVoicePlaying ? bgmVolume * 0.3 : bgmVolume;
+      const baseVolume = bgmVolume * 0.3; // 最大 0.3
+      const targetVolume = isVoicePlaying ? baseVolume * 0.3 : baseVolume;
       bgmRef.current.volume(targetVolume);
       bgmRef.current.mute(bgmVolume === 0);
     }
   }, [bgmVolume, isVoicePlaying]);
 
-  // --- 語音播放控制 (Audio Ducking 核心) ---
+  // --- 語音播放控制 ---
   const playVoice = (url) => {
     if (!isUnlocked || !url) return;
     if (isVoicePaused && voiceRef.current) {
