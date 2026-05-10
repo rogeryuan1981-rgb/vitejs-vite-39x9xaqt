@@ -35,9 +35,8 @@ export default function App() {
   const [isVoicePaused, setIsVoicePaused] = useState(false);
 
   const [uploadStatus, setUploadStatus] = useState('');
-  const [uploadProgress, setUploadProgress] = useState(0);
 
-  // 初始化資料庫清單
+  // 初始化
   useEffect(() => {
     const initApp = async () => {
       try {
@@ -112,13 +111,13 @@ export default function App() {
     return fullCardList.filter(card => card.id.includes(searchId));
   }, [searchId, fullCardList]);
 
-  // --- BGM 邏輯：最大限制 0.3 ---
+  // --- 手機端 BGM 強化控制 ---
   const initBgm = () => {
     if (bgmRef.current) { bgmRef.current.stop(); bgmRef.current.unload(); }
     bgmRef.current = new Howl({ 
       src: [activeBgm.src], 
       loop: true, 
-      volume: bgmVolume * 0.3, // 預設限縮至 30%
+      volume: bgmVolume * 0.3, 
       html5: true, 
       preload: true
     });
@@ -127,13 +126,19 @@ export default function App() {
 
   useEffect(() => { if (isUnlocked) initBgm(); }, [activeBgm, isUnlocked]);
 
-  // 音量連動修正，保持 30% 上限並支援播放避讓
+  // 同步音量：修正手機版不反應的問題
   useEffect(() => {
     if (bgmRef.current) {
-      const baseVolume = bgmVolume * 0.3; // 最大 0.3
-      const targetVolume = isVoicePlaying ? baseVolume * 0.3 : baseVolume;
-      bgmRef.current.volume(targetVolume);
-      bgmRef.current.mute(bgmVolume === 0);
+      const baseVol = bgmVolume * 0.3;
+      const finalVol = isVoicePlaying ? baseVol * 0.3 : baseVol;
+      bgmRef.current.volume(finalVol);
+      
+      // 行動端強制指令
+      if (bgmVolume === 0) {
+        bgmRef.current.mute(true);
+      } else {
+        bgmRef.current.mute(false);
+      }
     }
   }, [bgmVolume, isVoicePlaying]);
 
@@ -199,11 +204,19 @@ export default function App() {
         </div>
         <div className="flex items-center gap-3 bg-black/40 p-2 border border-[#1a1a1a] landscape:p-1">
           <select className="bg-transparent text-[10px] text-[#ffb74d] outline-none border-r border-[#1a1a1a] pr-2" value={activeBgm.id} onChange={(e) => setActiveBgm(bgmOptions.find(b => b.id === e.target.value))}>
-            {bgmOptions.map(b => <option key={b.id} value={b.id} className="bg-black">{b.name}</option>)}
+            {bgmOptions.map(b => <option key={b.id} value={b.id} className="bg-black text-[#ffb74d]">{b.name}</option>)}
           </select>
           <div className="flex items-center gap-2 px-1">
-            <span className="text-[8px] text-[#ffb74d] opacity-40 font-bold uppercase">V</span>
-            <input type="range" min="0" max="1" step="0.01" value={bgmVolume} onInput={(e) => setBgmVolume(parseFloat(e.target.value))} className="w-16 sm:w-24 h-1 accent-[#ffb74d]" />
+            <span className="text-[8px] text-[#ffb74d] opacity-40 font-bold uppercase">VOL</span>
+            <input 
+              type="range" 
+              min="0" 
+              max="1" 
+              step="0.01" 
+              value={bgmVolume} 
+              onInput={(e) => setBgmVolume(parseFloat(e.target.value))} 
+              className="w-16 sm:w-24 h-1 accent-[#ffb74d] cursor-pointer" 
+            />
           </div>
         </div>
       </header>
@@ -214,7 +227,7 @@ export default function App() {
           border-b md:border-b-0 md:border-r overflow-hidden landscape:h-10 md:landscape:h-full`}>
           
           <div className="p-2 flex justify-between md:justify-end items-center">
-            <span className="md:hidden text-[9px] text-[#ffb74d] font-bold px-1 uppercase tracking-widest">Archive</span>
+            <span className="md:hidden text-[9px] text-[#ffb74d] font-bold px-1 uppercase tracking-widest italic opacity-20">Terminal Sidebar</span>
             <button onClick={() => setIsCollapsed(!isCollapsed)} className="text-[#ffb74d] opacity-60 p-1 text-base">{isCollapsed ? "▼" : "▲"}</button>
           </div>
           
@@ -240,9 +253,9 @@ export default function App() {
           <div className="flex-none flex flex-col gap-2 bg-[#0a0a0a] p-3 border-b border-[#1a1a1a] landscape:p-1 landscape:gap-1">
             <div className="flex items-center gap-2">
               <div className="flex-1 bg-black border border-[#ffb74d]/20 p-2 text-xl font-mono text-[#ffb74d] min-h-[40px] flex items-center tracking-widest">
-                {searchId || <span className="opacity-10 text-[10px]">WAITING...</span>}
+                {searchId || <span className="opacity-10 text-[10px]">DIAL NUMBER...</span>}
               </div>
-              <button onClick={() => setSearchId(prev => prev.slice(0, -1))} className="p-2 bg-[#1a1a1a] text-[#ffb74d] border border-[#ffb74d]/20 px-4 active:bg-[#ffb74d]">←</button>
+              <button onClick={() => setSearchId(prev => prev.slice(0, -1))} className="p-2 bg-[#1a1a1a] text-[#ffb74d] border border-[#ffb74d]/20 px-4 active:bg-[#ffb74d] transition-colors">←</button>
               <button onClick={() => setSearchId('')} className="p-2 bg-[#1a1a1a] text-red-500 border border-red-500/20 px-3 active:bg-red-500">X</button>
             </div>
             <div className="grid grid-cols-10 gap-1">
@@ -272,7 +285,7 @@ export default function App() {
                   </button>
                   <button onClick={() => { stopVoice(); playVoice(currentCard.audioUrl); }} className="w-12 h-12 rounded-full border border-[#ffb74d]/30 text-[#ffb74d] flex items-center justify-center active:scale-95 transition-transform">↻</button>
                 </div>
-                <button onClick={() => { stopVoice(); setCurrentCard(null); }} className="mt-8 opacity-30 uppercase tracking-[0.4em] text-[8px] font-bold">Close Data</button>
+                <button onClick={() => { stopVoice(); setCurrentCard(null); }} className="mt-8 opacity-30 uppercase tracking-[0.4em] text-[8px] font-bold">Return to Library</button>
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 pb-10">
@@ -280,7 +293,7 @@ export default function App() {
                   <button key={card.id} onClick={() => { setCurrentCard(card); stopVoice(); playVoice(card.audioUrl); }} className="min-h-[100px] flex flex-col items-start justify-center border border-[#1a1a1a] bg-[#0a0a0a] active:border-[#ffb74d] p-4 relative landscape:min-h-[80px]">
                     <div className="absolute left-0 top-0 h-full w-1 bg-[#ffb74d] opacity-20"></div>
                     <span className="text-xl font-bold mb-1 font-mono text-left">{card.id}</span>
-                    <span className="text-[7px] opacity-20 uppercase tracking-widest font-bold tracking-tighter">Access</span>
+                    <span className="text-[7px] opacity-20 uppercase tracking-widest font-bold tracking-tighter italic">Accessing Record...</span>
                   </button>
                 ))}
               </div>
@@ -294,6 +307,10 @@ export default function App() {
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #333; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         .animate-fadeIn { animation: fadeIn 0.3s ease-out forwards; }
+        /* 優化手機拉桿觸感 */
+        input[type=range] { -webkit-appearance: none; background: transparent; }
+        input[type=range]::-webkit-slider-runnable-track { background: #222; height: 2px; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 14px; width: 14px; border-radius: 50%; background: #ffb74d; margin-top: -6px; }
       `}</style>
     </div>
   );
