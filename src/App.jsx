@@ -37,6 +37,7 @@ export default function App() {
   const [uploadStatus, setUploadStatus] = useState('');
   const [uploadProgress, setUploadProgress] = useState(0);
 
+  // 初始化
   useEffect(() => {
     const initApp = async () => {
       try {
@@ -111,38 +112,25 @@ export default function App() {
     return fullCardList.filter(card => card.id.includes(searchId));
   }, [searchId, fullCardList]);
 
-  // --- BGM 控制 (針對手機版優化) ---
+  // BGM 控制
   const initBgm = () => {
     if (bgmRef.current) { bgmRef.current.stop(); bgmRef.current.unload(); }
     bgmRef.current = new Howl({ 
-      src: [activeBgm.src], 
-      loop: true, 
-      volume: bgmVolume, 
-      html5: true, // 手機版必須開啟 html5 模式以支援大檔案與串流
-      preload: true
+      src: [activeBgm.src], loop: true, volume: bgmVolume, html5: true, preload: true
     });
     bgmRef.current.play();
   };
 
   useEffect(() => { if (isUnlocked) initBgm(); }, [activeBgm, isUnlocked]);
 
-  // 核心修正：手機 Chrome 拉桿音量同步
   useEffect(() => {
     if (bgmRef.current) {
       bgmRef.current.volume(bgmVolume);
-      // 行動端靜音保護邏輯
-      if (bgmVolume === 0) bgmRef.current.mute(true);
-      else bgmRef.current.mute(false);
+      bgmRef.current.mute(bgmVolume === 0);
     }
   }, [bgmVolume]);
 
-  const startRitual = () => {
-    setIsUnlocked(true);
-    Howler.unload();
-    initBgm();
-  };
-
-  // --- 語音播放控制 ---
+  // 語音控制
   const playVoice = (url) => {
     if (!isUnlocked || !url) return;
     if (isVoicePaused && voiceRef.current) {
@@ -162,119 +150,142 @@ export default function App() {
   const pauseVoice = () => voiceRef.current?.pause();
   const stopVoice = () => voiceRef.current?.stop();
 
+  const handleFolderSelect = async (event) => {
+    const files = event.target.files;
+    if (!files) return;
+    setUploadStatus('同步中');
+    const audioFiles = Array.from(files).filter(f => f.type.startsWith('audio/'));
+    for (let i = 0; i < audioFiles.length; i++) {
+      const file = audioFiles[i];
+      const cardId = file.name.split('.')[0].toUpperCase();
+      const pathParts = file.webkitRelativePath.split('/');
+      let scen = pathParts[pathParts.length - 3] || "未命名";
+      let deck = pathParts[pathParts.length - 2] || "未分類";
+      try {
+        const storageRef = ref(storage, `audios/${scen}/${deck}/${file.name}`);
+        await uploadBytesResumable(storageRef, file);
+        const url = await getDownloadURL(storageRef);
+        await setDoc(doc(db, "cards", cardId), { id: cardId, scenario: scen, deckType: deck, audioUrl: url });
+        setUploadProgress(Math.round(((i + 1) / audioFiles.length) * 100));
+      } catch (e) { console.error(e); }
+    }
+    setUploadStatus("完成");
+    fetchScenarios();
+  };
+
   return (
-    <div className="w-screen h-screen flex flex-col overflow-hidden bg-[#050505] text-[#c9b99a] font-sans">
+    <div className="fixed inset-0 flex flex-col bg-[#050505] text-[#c9b99a] font-sans overflow-hidden">
       <div className="fixed inset-0 pointer-events-none opacity-[0.04] z-[9999] bg-[url('https://www.transparenttextures.com/patterns/micro-carbon.png')]"></div>
       
       {!isUnlocked && (
         <div className="fixed inset-0 z-[100] bg-black flex items-center justify-center">
-          <button onClick={startRitual} className="px-16 py-8 border-2 border-[#ffb74d] text-[#ffb74d] text-2xl font-bold tracking-[0.5em]">啟動檢視</button>
+          <button onClick={() => { setIsUnlocked(true); initBgm(); }} className="px-12 py-6 border-2 border-[#ffb74d] text-[#ffb74d] text-xl font-bold tracking-[0.5em] active:scale-95 transition-transform">啟動檢視</button>
         </div>
       )}
 
-      {/* Header */}
-      <header className="flex-none flex justify-between items-center px-8 py-6 border-b border-[#1a1a1a] bg-[#0a0a0a] z-20">
-        <div className="flex items-center gap-4 cursor-pointer" onClick={handleAdminTrigger}>
-          <div className="text-[#ffb74d] text-3xl">👁️</div>
-          <h1 className="text-3xl font-bold text-[#ffb74d] tracking-tighter">禁忌檔案庫 {isAdmin && " [M]"}</h1>
+      {/* Header - 響應式調整 */}
+      <header className="flex-none flex flex-col sm:flex-row justify-between items-center px-4 py-4 sm:px-8 sm:py-6 border-b border-[#1a1a1a] bg-[#0a0a0a] z-20 gap-4">
+        <div className="flex items-center gap-3 cursor-pointer" onClick={handleAdminTrigger}>
+          <div className="text-[#ffb74d] text-2xl">👁️</div>
+          <h1 className="text-xl sm:text-2xl font-bold text-[#ffb74d] tracking-tighter">禁忌檔案庫 {isAdmin && " [M]"}</h1>
         </div>
-        <div className="flex items-center gap-6 bg-black/40 p-4 border border-[#1a1a1a]">
-          <span className="text-[10px] text-[#ffb74d] opacity-50 uppercase font-bold">BGM 頻道</span>
-          <select className="bg-transparent text-sm text-[#ffb74d] outline-none" onChange={(e) => setActiveBgm(bgmOptions.find(b => b.id === e.target.value))}>
+        <div className="flex items-center gap-4 bg-black/40 p-3 border border-[#1a1a1a] w-full sm:w-auto justify-between">
+          <select className="bg-transparent text-xs text-[#ffb74d] outline-none border-r border-[#1a1a1a] pr-4" onChange={(e) => setActiveBgm(bgmOptions.find(b => b.id === e.target.value))}>
             {bgmOptions.map(b => <option key={b.id} value={b.id} className="bg-black">{b.name}</option>)}
           </select>
-          {/* 修正點：使用 onInput 捕獲觸控滑動過程中的數值變化 */}
-          <input 
-            type="range" 
-            min="0" 
-            max="1" 
-            step="0.01" 
-            value={bgmVolume} 
-            onInput={(e) => setBgmVolume(parseFloat(e.target.value))} 
-            className="w-24 h-1 accent-[#ffb74d]" 
-          />
+          <div className="flex items-center gap-3 flex-1 px-2">
+            <span className="text-[8px] text-[#ffb74d] opacity-40 uppercase font-bold">VOL</span>
+            <input type="range" min="0" max="1" step="0.01" value={bgmVolume} onInput={(e) => setBgmVolume(parseFloat(e.target.value))} className="flex-1 h-1 accent-[#ffb74d]" />
+          </div>
         </div>
       </header>
 
-      <main className="flex-1 flex overflow-hidden">
-        <aside className={`transition-all duration-500 border-r border-[#1a1a1a] flex flex-col bg-[#080808] ${isCollapsed ? 'w-20' : 'w-72'}`}>
-          <div className="p-4 flex justify-end">
-            <button onClick={() => setIsCollapsed(!isCollapsed)} className="text-[#ffb74d] opacity-40 hover:opacity-100 text-xl">{isCollapsed ? "»" : "«"}</button>
+      {/* 主體區域 - 手機版改為 col */}
+      <main className="flex-1 flex flex-col md:flex-row overflow-hidden h-full">
+        {/* 左側選單 - 手機版高度固定，平板以上寬度固定 */}
+        <aside className={`transition-all duration-500 border-[#1a1a1a] flex flex-col bg-[#080808] 
+          ${isCollapsed ? 'md:w-20 h-16 md:h-full' : 'md:w-72 h-48 md:h-full'} 
+          border-b md:border-b-0 md:border-r overflow-hidden`}>
+          
+          <div className="p-3 flex justify-between md:justify-end items-center">
+            <span className="md:hidden text-[10px] text-[#ffb74d] font-bold px-2">劇本/分類切換</span>
+            <button onClick={() => setIsCollapsed(!isCollapsed)} className="text-[#ffb74d] opacity-60 p-2 text-xl">{isCollapsed ? "▼" : "▲"}</button>
           </div>
+          
           <div className="flex-1 overflow-y-auto px-4 custom-scrollbar">
-            <p className="text-[10px] text-[#ffb74d] opacity-30 uppercase tracking-widest mb-4 font-bold text-center">劇本</p>
-            {scenarios.map(s => (
-              <button key={s} onClick={() => setActiveScenario(s)} className={`w-full p-4 mb-2 text-left text-lg border ${activeScenario === s ? 'bg-[#ffb74d] text-black border-[#ffb74d] font-bold' : 'border-[#1a1a1a] opacity-60'}`}>
-                {isCollapsed ? s.charAt(0) : s}
-              </button>
-            ))}
-            <p className="text-[10px] text-[#ffb74d] opacity-30 uppercase tracking-widest my-4 font-bold text-center">分類</p>
-            {availableDecks.map(d => (
-              <button key={d} onClick={() => setActiveDeckType(d)} className={`w-full p-4 mb-2 text-left text-sm border ${activeDeckType === d ? 'border-[#ffb74d] text-[#ffb74d] font-bold' : 'border-[#1a1a1a] opacity-40'}`}>
-                {isCollapsed ? d.charAt(0) : d}
-              </button>
-            ))}
+            <p className="text-[8px] text-[#ffb74d] opacity-30 uppercase tracking-[0.3em] mb-2 font-bold text-center">Scenarios</p>
+            <div className="flex md:flex-col gap-2 mb-4">
+              {scenarios.map(s => (
+                <button key={s} onClick={() => { setActiveScenario(s); if(window.innerWidth < 768) setIsCollapsed(true); }} className={`whitespace-nowrap md:whitespace-normal p-3 text-xs border ${activeScenario === s ? 'bg-[#ffb74d] text-black border-[#ffb74d] font-bold' : 'border-[#1a1a1a] opacity-50'}`}>
+                  {isCollapsed ? s.charAt(0) : s}
+                </button>
+              ))}
+            </div>
+            <p className="text-[8px] text-[#ffb74d] opacity-30 uppercase tracking-[0.3em] mb-2 font-bold text-center">Types</p>
+            <div className="flex md:flex-col gap-2 pb-6">
+              {availableDecks.map(d => (
+                <button key={d} onClick={() => { setActiveDeckType(d); if(window.innerWidth < 768) setIsCollapsed(true); }} className={`whitespace-nowrap md:whitespace-normal p-3 text-xs border ${activeDeckType === d ? 'border-[#ffb74d] text-[#ffb74d] font-bold' : 'border-[#1a1a1a] opacity-40'}`}>
+                  {isCollapsed ? d.charAt(0) : d}
+                </button>
+              ))}
+            </div>
           </div>
         </aside>
 
-        <div className="flex-1 flex flex-col overflow-hidden p-6 gap-6">
-          <div className="flex-none flex flex-col gap-4 bg-[#0a0a0a] p-6 border border-[#1a1a1a]">
-            <div className="flex items-center gap-4">
-              <div className="flex-1 bg-black border border-[#ffb74d]/30 p-5 text-4xl font-mono text-[#ffb74d] tracking-widest min-h-[80px] flex items-center">
-                {searchId || <span className="opacity-10">Waiting...</span>}
+        {/* 右側內容區 - 強制滾動修復 */}
+        <div className="flex-1 flex flex-col min-h-0 bg-[#050505]">
+          
+          {/* 數字鍵盤區 */}
+          <div className="flex-none flex flex-col gap-3 bg-[#0a0a0a] p-4 border-b border-[#1a1a1a]">
+            <div className="flex items-center gap-2">
+              <div className="flex-1 bg-black border border-[#ffb74d]/20 p-3 text-2xl font-mono text-[#ffb74d] min-h-[50px] flex items-center tracking-widest overflow-hidden">
+                {searchId || <span className="opacity-10 text-sm">NO DATA...</span>}
               </div>
-              <button onClick={() => setSearchId(prev => prev.slice(0, -1))} className="px-8 py-5 bg-[#1a1a1a] text-[#ffb74d] text-2xl font-bold border border-[#ffb74d]/20">←</button>
-              <button onClick={() => setSearchId('')} className="px-8 py-5 bg-[#1a1a1a] text-red-500 text-2xl font-bold border border-red-500/20">CLEAR</button>
+              <button onClick={() => setSearchId(prev => prev.slice(0, -1))} className="p-3 bg-[#1a1a1a] text-[#ffb74d] border border-[#ffb74d]/20 px-6 active:bg-[#ffb74d] active:text-black">←</button>
+              <button onClick={() => setSearchId('')} className="p-3 bg-[#1a1a1a] text-red-500 border border-red-500/20 px-4">X</button>
             </div>
-            <div className="grid grid-cols-10 gap-2">
+            <div className="grid grid-cols-5 sm:grid-cols-10 gap-1.5">
               {[1, 2, 3, 4, 5, 6, 7, 8, 9, 0].map(num => (
-                <button 
-                  key={num} 
-                  onClick={() => setSearchId(prev => prev + num.toString())}
-                  className="py-6 bg-[#080808] border border-[#1a1a1a] text-2xl font-bold hover:border-[#ffb74d] hover:text-[#ffb74d] transition-all"
-                >
+                <button key={num} onClick={() => setSearchId(prev => prev + num.toString())} className="py-4 bg-[#080808] border border-[#1a1a1a] text-lg font-bold active:border-[#ffb74d] active:text-[#ffb74d]">
                   {num}
                 </button>
               ))}
             </div>
           </div>
 
-          <div className="flex-1 border border-[#1a1a1a] bg-[#050505] overflow-y-auto p-8 custom-scrollbar relative">
+          {/* 卡片清單區 - 手機滾動核心修正 */}
+          <div className="flex-1 overflow-y-auto p-4 sm:p-8 custom-scrollbar h-full -webkit-overflow-scrolling-touch">
             {isAdmin ? (
-              <div className="text-center p-10">
-                <input type="file" webkitdirectory="true" directory="true" multiple onChange={handleFolderSelect} />
-                <p className="text-[#ffb74d] mt-4">{uploadStatus} {uploadProgress}%</p>
-                <button onClick={() => setIsAdmin(false)} className="mt-10 opacity-40 underline font-bold">關閉管理模式</button>
+              <div className="text-center py-10">
+                <input type="file" webkitdirectory="true" directory="true" multiple onChange={handleFolderSelect} className="text-xs" />
+                <p className="text-[#ffb74d] mt-4 text-sm">{uploadStatus} {uploadProgress}%</p>
+                <button onClick={() => setIsAdmin(false)} className="mt-10 opacity-40 text-xs underline">EXIT ADMIN</button>
               </div>
             ) : currentCard ? (
-              <div className="h-full flex flex-col items-center justify-center animate-fadeIn">
-                <p className="opacity-30 tracking-[0.5em] mb-6 text-sm uppercase">{currentCard.scenario} / {currentCard.deckType}</p>
-                <h2 className="text-6xl md:text-9xl font-bold text-[#ffb74d] mb-16 font-mono tracking-tight text-center px-10">{currentCard.id}</h2>
-                <div className="flex items-center gap-10">
-                  <button onClick={() => stopVoice()} className="w-20 h-20 rounded-full border border-[#ffb74d]/30 text-[#ffb74d] text-3xl flex items-center justify-center">■</button>
-                  <button 
-                    onClick={() => isVoicePlaying ? pauseVoice() : playVoice(currentCard.audioUrl)} 
-                    className={`w-40 h-40 rounded-full border-4 flex items-center justify-center text-7xl ${isVoicePlaying ? 'border-[#ffb74d] bg-[#ffb74d]/10 animate-pulse' : 'border-[#c9b99a]/10'}`}
-                  >
+              <div className="h-full flex flex-col items-center justify-center animate-fadeIn py-6">
+                <p className="opacity-30 tracking-[0.3em] mb-4 text-[10px] uppercase">{currentCard.scenario} / {currentCard.deckType}</p>
+                <h2 className="text-5xl sm:text-8xl font-bold text-[#ffb74d] mb-10 font-mono tracking-tighter text-center break-all">{currentCard.id}</h2>
+                <div className="flex items-center gap-6 sm:gap-10">
+                  <button onClick={() => stopVoice()} className="w-14 h-14 sm:w-20 sm:h-20 rounded-full border border-[#ffb74d]/30 text-[#ffb74d] text-xl flex items-center justify-center">■</button>
+                  <button onClick={() => isVoicePlaying ? pauseVoice() : playVoice(currentCard.audioUrl)} className={`w-28 h-28 sm:w-40 sm:h-40 rounded-full border-4 flex items-center justify-center text-5xl ${isVoicePlaying ? 'border-[#ffb74d] bg-[#ffb74d]/10 animate-pulse' : 'border-[#c9b99a]/10'}`}>
                     {isVoicePlaying ? '||' : '▶'}
                   </button>
-                  <button onClick={() => { stopVoice(); playVoice(currentCard.audioUrl); }} className="w-20 h-20 rounded-full border border-[#ffb74d]/30 text-[#ffb74d] text-3xl flex items-center justify-center">↻</button>
+                  <button onClick={() => { stopVoice(); playVoice(currentCard.audioUrl); }} className="w-14 h-14 sm:w-20 sm:h-20 rounded-full border border-[#ffb74d]/30 text-[#ffb74d] text-xl flex items-center justify-center">↻</button>
                 </div>
-                <button onClick={() => { stopVoice(); setCurrentCard(null); }} className="mt-16 opacity-30 uppercase tracking-[0.6em] text-xs font-bold">返回列表</button>
+                <button onClick={() => { stopVoice(); setCurrentCard(null); }} className="mt-12 opacity-30 uppercase tracking-[0.4em] text-[10px] font-bold border-b border-transparent hover:border-[#c9b99a]">CLOSE ARCHIVE</button>
               </div>
             ) : (
-              <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-20">
                 {filteredCardList.map(card => (
-                  <button 
-                    key={card.id} 
-                    onClick={() => { setCurrentCard(card); stopVoice(); playVoice(card.audioUrl); }} 
-                    className="min-h-[180px] flex flex-col items-start justify-center border border-[#1a1a1a] bg-[#0a0a0a] hover:border-[#ffb74d] transition-all p-10 relative overflow-hidden group shadow-lg"
-                  >
-                    <div className="absolute top-0 left-0 w-1.5 h-full bg-[#ffb74d] opacity-0 group-hover:opacity-100"></div>
-                    <span className="text-3xl font-bold mb-4 font-mono text-left leading-tight">{card.id}</span>
-                    <span className="text-[10px] opacity-20 font-bold uppercase tracking-widest">檢視檔案</span>
+                  <button key={card.id} onClick={() => { setCurrentCard(card); stopVoice(); playVoice(card.audioUrl); }} className="min-h-[120px] flex flex-col items-start justify-center border border-[#1a1a1a] bg-[#0a0a0a] active:border-[#ffb74d] p-6 relative group">
+                    <div className="absolute left-0 top-0 h-full w-1 bg-[#ffb74d] opacity-20"></div>
+                    <span className="text-2xl font-bold mb-2 font-mono break-all text-left">{card.id}</span>
+                    <span className="text-[8px] opacity-20 uppercase tracking-widest font-bold">Access Data</span>
                   </button>
                 ))}
+                {filteredCardList.length === 0 && (
+                  <div className="col-span-full py-20 text-center opacity-10 text-xl tracking-[0.5em]">NO MATCH</div>
+                )}
               </div>
             )}
           </div>
@@ -282,10 +293,13 @@ export default function App() {
       </main>
 
       <style jsx>{`
-        .custom-scrollbar::-webkit-scrollbar { width: 5px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #1a1a1a; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
-        .animate-fadeIn { animation: fadeIn 0.4s cubic-bezier(0.23, 1, 0.32, 1) forwards; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #1a1a1a; border-radius: 10px; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fadeIn { animation: fadeIn 0.3s ease-out forwards; }
+        input[type=range] { -webkit-appearance: none; background: transparent; }
+        input[type=range]::-webkit-slider-runnable-track { background: #1a1a1a; height: 2px; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 12px; width: 12px; background: #ffb74d; margin-top: -5px; border-radius: 50%; }
       `}</style>
     </div>
   );
